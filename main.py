@@ -19,9 +19,11 @@ import pandas as pd
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from loguru import logger
 from swarms import Agent
-
+from dotenv import load_dotenv
 from examples.ui_dashboard import UIManager
 
+
+load_dotenv()
 
 
 def get_optimal_worker_count() -> int:
@@ -221,7 +223,7 @@ class ClaudeAppGenerator:
 - **Technology Stack:** {spec.tech_stack}
 - **Complexity Level:** {spec.complexity_level}
 - **Additional Requirements:** {spec.additional_requirements}"""
-        
+
         enriched_section = ""
         if spec.enriched_spec:
             enriched_section = f"""
@@ -230,7 +232,7 @@ class ClaudeAppGenerator:
 {spec.enriched_spec}
 
 **IMPORTANT:** Use the enhanced product specification above as your primary guide. It provides detailed requirements, features, and technical specifications that should drive your implementation decisions."""
-        
+
         return f"""You are an expert software developer and architect specializing in creating production-ready applications. You will build a complete, functional application based on the following specification.
 
 {base_spec_section}{enriched_section}
@@ -291,7 +293,7 @@ Create a professional-grade application that directly addresses the specified pr
         enrichment_reference = ""
         if spec.enriched_spec:
             enrichment_reference = " Pay special attention to the enhanced product specification provided in your system prompt, which contains detailed requirements and feature specifications."
-            
+
         return f"""Build the complete "{spec.name}" application based on the detailed specification in your system prompt.{enrichment_reference}
 
 **IMPLEMENTATION REQUIREMENTS:**
@@ -380,17 +382,27 @@ Start by creating the project structure, then implement the core functionality s
                 logger.info(f"Enriching specification for app: {spec.name}")
                 spec.enriched_spec = product_spec_enricher(spec)
                 if self.ui_manager:
-                    self.ui_manager.log_app_activity(spec.name, "Product specification enriched")
+                    self.ui_manager.log_app_activity(
+                        spec.name, "Product specification enriched"
+                    )
                     self.ui_manager.update_app_status(
-                        spec.name, "running", 8.0, "Specification enriched, initializing Claude SDK..."
+                        spec.name,
+                        "running",
+                        8.0,
+                        "Specification enriched, initializing Claude SDK...",
                     )
                 logger.info(f"Successfully enriched specification for app: {spec.name}")
             except Exception as e:
                 logger.warning(f"Failed to enrich specification for {spec.name}: {e}")
                 if self.ui_manager:
-                    self.ui_manager.log_app_activity(spec.name, f"Enrichment failed: {e}")
+                    self.ui_manager.log_app_activity(
+                        spec.name, f"Enrichment failed: {e}"
+                    )
                     self.ui_manager.update_app_status(
-                        spec.name, "running", 8.0, "Enrichment failed, proceeding with original spec..."
+                        spec.name,
+                        "running",
+                        8.0,
+                        "Enrichment failed, proceeding with original spec...",
                     )
 
         # Update UI that generation is starting
@@ -414,7 +426,10 @@ Start by creating the project structure, then implement the core functionality s
 
                 if self.ui_manager:
                     self.ui_manager.update_app_status(
-                        spec.name, "running", 15.0, f"Starting generation (attempt {attempt + 1})"
+                        spec.name,
+                        "running",
+                        15.0,
+                        f"Starting generation (attempt {attempt + 1})",
                     )
 
                 async with ClaudeSDKClient(
@@ -428,7 +443,10 @@ Start by creating the project structure, then implement the core functionality s
 
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
-                            spec.name, "running", 25.0, "Connected to Claude, sending prompt..."
+                            spec.name,
+                            "running",
+                            25.0,
+                            "Connected to Claude, sending prompt...",
                         )
 
                     # Generate the application with detailed progress tracking
@@ -436,7 +454,9 @@ Start by creating the project structure, then implement the core functionality s
 
                     response_text = []
                     message_count = 0
-                    progress_increment = 60.0 / 20  # 60% for message processing, divided by max_turns
+                    progress_increment = (
+                        60.0 / 20
+                    )  # 60% for message processing, divided by max_turns
 
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
@@ -445,30 +465,40 @@ Start by creating the project structure, then implement the core functionality s
 
                     async for message in client.receive_response():
                         message_count += 1
-                        current_progress = min(35.0 + (message_count * progress_increment), 90.0)
-                        
+                        current_progress = min(
+                            35.0 + (message_count * progress_increment), 90.0
+                        )
+
                         if hasattr(message, "content"):
                             for block in message.content:
                                 if hasattr(block, "text"):
                                     text_content = block.text
                                     response_text.append(text_content)
-                                    
+
                                     # Send Claude message to UI (truncated for display)
                                     if self.ui_manager:
-                                        self.ui_manager.add_claude_message(spec.name, text_content)
-                                        self.ui_manager.update_app_status(
-                                            spec.name, "running", current_progress, 
-                                            f"Processing message {message_count}/20"
+                                        self.ui_manager.add_claude_message(
+                                            spec.name, text_content
                                         )
-                                        
+                                        self.ui_manager.update_app_status(
+                                            spec.name,
+                                            "running",
+                                            current_progress,
+                                            f"Processing message {message_count}/20",
+                                        )
+
                         elif type(message).__name__ == "ResultMessage":
                             logger.info(f"App {spec.name}: Received result message")
                             result_text = str(message.result)
                             response_text.append(result_text)
-                            
+
                             if self.ui_manager:
-                                self.ui_manager.add_claude_message(spec.name, f"Result: {result_text}")
-                                self.ui_manager.log_app_activity(spec.name, "Received result message from Claude")
+                                self.ui_manager.add_claude_message(
+                                    spec.name, f"Result: {result_text}"
+                                )
+                                self.ui_manager.log_app_activity(
+                                    spec.name, "Received result message from Claude"
+                                )
 
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
@@ -485,7 +515,10 @@ Start by creating the project structure, then implement the core functionality s
                         file_names = [f.name for f in created_files if f.is_file()]
                         self.ui_manager.add_files_created(spec.name, file_names)
                         self.ui_manager.update_app_status(
-                            spec.name, "completed", 100.0, f"Generated {len(created_files)} files successfully"
+                            spec.name,
+                            "completed",
+                            100.0,
+                            f"Generated {len(created_files)} files successfully",
                         )
 
                     logger.info(
@@ -511,29 +544,37 @@ Start by creating the project structure, then implement the core functionality s
                 logger.warning(
                     f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}\nTraceback:\n{tb_str}"
                 )
-                
+
                 if self.ui_manager:
                     self.ui_manager.update_app_status(
-                        spec.name, "error" if attempt == max_retries - 1 else "running", 
-                        0.0, f"Attempt {attempt + 1} failed", error_msg
+                        spec.name,
+                        "error" if attempt == max_retries - 1 else "running",
+                        0.0,
+                        f"Attempt {attempt + 1} failed",
+                        error_msg,
                     )
-                    
+
                 # If not the last attempt, add retry delay
                 if attempt < max_retries - 1:
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
-                            spec.name, "running", 0.0, 
-                            f"Retrying in {self.retry_delay}s... (attempt {attempt + 2}/{max_retries})"
+                            spec.name,
+                            "running",
+                            0.0,
+                            f"Retrying in {self.retry_delay}s... (attempt {attempt + 2}/{max_retries})",
                         )
                     await asyncio.sleep(self.retry_delay)
-                    
+
         # If we get here, all retries failed
         if self.ui_manager:
             self.ui_manager.update_app_status(
-                spec.name, "error", 0.0, "All retry attempts failed", 
-                f"Failed after {max_retries} attempts"
+                spec.name,
+                "error",
+                0.0,
+                "All retry attempts failed",
+                f"Failed after {max_retries} attempts",
             )
-            
+
         return {
             "success": False,
             "app_name": spec.name,
@@ -552,7 +593,6 @@ Start by creating the project structure, then implement the core functionality s
             Dict containing generation results
         """
         return asyncio.run(self.generate_app_with_claude(spec))
-
 
 
 def product_spec_enricher(spec: AppSpecification) -> str:
@@ -597,6 +637,7 @@ def product_spec_enricher(spec: AppSpecification) -> str:
     enriched_spec = agent.run(task=enrichment_prompt)
     return enriched_spec
 
+
 class MultiAppOrchestrator:
     """
     Orchestrates the concurrent generation of multiple applications from CSV specifications.
@@ -637,19 +678,21 @@ class MultiAppOrchestrator:
         self.show_progress = show_progress
         self.enable_ui = enable_ui
         self.enable_enrichment = enable_enrichment
-        
+
         # Initialize UI Manager
-        self.ui_manager = UIManager(show_claude_output=show_claude_output) if enable_ui else None
-        
+        self.ui_manager = (
+            UIManager(show_claude_output=show_claude_output) if enable_ui else None
+        )
+
         # Track app generation status for progress monitoring (legacy)
         self.app_statuses = {}
         self.status_lock = threading.Lock()
 
         self.ingester = CSVAppIngester(csv_file_path)
         self.generator = ClaudeAppGenerator(
-            output_directory, 
+            output_directory,
             ui_manager=self.ui_manager,
-            enable_enrichment=enable_enrichment
+            enable_enrichment=enable_enrichment,
         )
 
         logger.info(
@@ -884,6 +927,7 @@ class MultiAppOrchestrator:
             if ui_started and self.ui_manager:
                 # Give a moment for final updates to be displayed
                 import time
+
                 time.sleep(1)
                 self.ui_manager.stop()
             elif self.show_progress:
@@ -933,7 +977,7 @@ def run_multi_app_generation(
 ) -> Dict[str, Any]:
     """
     Convenience function to run multi-app generation with Rich UI.
-    
+
     Args:
         csv_file_path: Path to CSV file with app specifications
         output_directory: Directory for generated apps
@@ -941,18 +985,18 @@ def run_multi_app_generation(
         enable_ui: Whether to enable the Rich console UI
         show_claude_output: Whether to show Claude agent outputs in UI
         enable_enrichment: Whether to enable product specification enrichment
-        
+
     Returns:
         Dict containing generation results and statistics
-        
+
     Example:
         ```python
         # Run with Rich UI and enrichment enabled
         results = run_multi_app_generation("sample.csv", enable_ui=True, enable_enrichment=True)
-        
+
         # Run without UI (legacy mode)
         results = run_multi_app_generation("sample.csv", enable_ui=False)
-        
+
         # Run with enrichment but without UI
         results = run_multi_app_generation("sample.csv", enable_ui=False, enable_enrichment=True)
         ```
@@ -965,28 +1009,28 @@ def run_multi_app_generation(
         show_claude_output=show_claude_output,
         enable_enrichment=enable_enrichment,
     )
-    
+
     return orchestrator.run()
 
 
 # if __name__ == "__main__":
 #     import sys
-    
+
 #     if len(sys.argv) < 2:
 #         print("Usage: python main.py <csv_file_path> [output_directory] [--enrich]")
 #         print("Example: python main.py sample.csv artifacts")
 #         print("Example with enrichment: python main.py sample.csv artifacts --enrich")
 #         sys.exit(1)
-    
+
 #     csv_path = sys.argv[1]
 #     output_dir = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else "artifacts"
-    
+
 #     # Check for enrichment flag
 #     enable_enrichment = "--enrich" in sys.argv
-    
+
 #     if enable_enrichment:
 #         print("🧠 Product specification enrichment enabled!")
-    
+
 #     # Run with Rich UI enabled by default
 #     try:
 #         results = run_multi_app_generation(

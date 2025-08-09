@@ -28,10 +28,9 @@ def main():
         orchestrator = MultiAppOrchestrator(
             csv_file_path=csv_file,
             output_directory=output_dir,
-            max_concurrent=None,  # Auto-detect optimal worker count
-            show_progress=False,  # Disable progress dashboard
-            enable_ui=True,
+            enable_ui=False,
             enable_enrichment=True,
+            show_claude_output=True,
         )
 
         # Generate all apps concurrently

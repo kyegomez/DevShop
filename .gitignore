@@ -115,6 +115,7 @@ ipython_config.py
 #   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
 #   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
 #pdm.lock
+agent_workspace/
 #pdm.toml
 .pdm-python
 .pdm-build/
