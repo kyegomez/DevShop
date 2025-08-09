@@ -19,7 +19,6 @@ import os
 from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
 
 
-
 def get_optimal_worker_count() -> int:
     """
     Calculate the optimal number of worker threads for concurrent app generation.
@@ -222,6 +221,17 @@ class ClaudeAppGenerator:
 - Configuration files and environment setup
 - Basic tests or validation scripts
 - Documentation for deployment and maintenance
+- GitHub repository setup with proper structure
+- Vercel deployment configuration and automation
+
+**DEPLOYMENT REQUIREMENTS:**
+- Create a new GitHub repository for the application using the GitHub API
+- Set up proper repository structure with .gitignore, LICENSE, and documentation
+- Configure Vercel deployment through their API for automatic deployments
+- Include vercel.json configuration file for deployment settings
+- Set up environment variables and secrets management for production
+- Implement CI/CD pipeline for automated testing and deployment
+- Include deployment scripts and automation tools
 
 **TECHNICAL STANDARDS:**
 - Follow language-specific best practices and conventions
@@ -230,8 +240,10 @@ class ClaudeAppGenerator:
 - Ensure code is immediately runnable after following setup instructions
 - Include proper logging and monitoring capabilities
 - Consider security best practices relevant to the application type
+- Implement proper environment configuration for development and production
+- Set up automated deployment workflows
 
-Create a professional-grade application that directly addresses the specified problem for the target users. The application should be ready for real-world deployment and use.
+Create a professional-grade application that directly addresses the specified problem for the target users. The application should be ready for real-world deployment and use with full GitHub integration and Vercel hosting.
 """
 
     def _create_generation_prompt(self, spec: AppSpecification) -> str:
@@ -257,6 +269,34 @@ Create a professional-grade application that directly addresses the specified pr
 7. **User Interface:** Create an intuitive interface that matches the design preferences
 8. **Testing:** Add basic validation or test files where appropriate
 
+**DEPLOYMENT AND HOSTING REQUIREMENTS:**
+
+1. **GitHub Repository Setup:**
+   - Create a new GitHub repository using the GitHub API
+   - Initialize with proper .gitignore, LICENSE, and README.md
+   - Set up repository structure with appropriate branches
+   - Configure repository settings and permissions
+   - Add repository topics and description
+
+2. **Vercel Deployment Configuration:**
+   - Create vercel.json configuration file for deployment settings
+   - Set up Vercel project through their API
+   - Configure build commands and output directory
+   - Set up environment variables for production
+   - Enable automatic deployments from GitHub
+
+3. **CI/CD Pipeline:**
+   - Create GitHub Actions workflows for automated testing
+   - Set up deployment automation to Vercel
+   - Include build and test scripts
+   - Configure deployment previews for pull requests
+
+4. **Production Setup:**
+   - Include deployment scripts and configuration
+   - Set up monitoring and error tracking
+   - Configure custom domain (if applicable)
+   - Implement security headers and best practices
+
 **TECHNICAL SPECIFICATIONS:**
 - Technology Stack: {spec.tech_stack}
 - Complexity Level: {spec.complexity_level}
@@ -268,8 +308,18 @@ Create a professional-grade application that directly addresses the specified pr
 - Follows modern development best practices
 - Includes proper error handling and user feedback
 - Code is clean, well-commented, and maintainable
+- Successfully deployed to Vercel with custom domain
+- GitHub repository is properly configured with automated workflows
 
-Start by creating the project structure, then implement the core functionality systematically. Ensure every file serves a clear purpose and the application is production-ready.
+**DEPLOYMENT WORKFLOW:**
+1. Create and configure GitHub repository
+2. Set up Vercel project and link to repository
+3. Configure environment variables and build settings
+4. Deploy application and verify functionality
+5. Set up monitoring and analytics
+6. Document deployment process and maintenance procedures
+
+Start by creating the project structure, then implement the core functionality systematically. After completing the application, set up GitHub repository and Vercel deployment with full automation. Ensure every file serves a clear purpose and the application is production-ready with live deployment.
 """
 
     async def generate_app_with_claude(self, spec: AppSpecification) -> Dict[str, Any]:
@@ -286,61 +336,83 @@ Start by creating the project structure, then implement the core functionality s
         retry_delay = 2.0
 
         for attempt in range(max_retries):
-            system_prompt = self._create_system_prompt(spec)
-            generation_prompt = self._create_generation_prompt(spec)
+            try:
+                system_prompt = self._create_system_prompt(spec)
+                generation_prompt = self._create_generation_prompt(spec)
 
-            # Create app directory
-            app_dir = self.output_directory / spec.name.lower().replace(" ", "_")
-            app_dir.mkdir(exist_ok=True)
-
-            logger.info(
-                f"Starting generation for app: {spec.name} (attempt {attempt + 1}/{max_retries})"
-            )
-
-            async with ClaudeSDKClient(
-                options=ClaudeCodeOptions(
-                    system_prompt=system_prompt,
-                    max_turns=15,  # Increased for more complex generations
-                    allowed_tools=["Read", "Write", "Bash", "Grep", "WebSearch"],
-                    continue_conversation=False,  # Start fresh each time
-                )
-            ) as client:
-
-                # Generate the application with detailed progress tracking
-                await client.query(generation_prompt)
-
-                response_text = []
-                message_count = 0
-
-                async for message in client.receive_response():
-                    message_count += 1
-                    if hasattr(message, "content"):
-                        for block in message.content:
-                            if hasattr(block, "text"):
-                                response_text.append(block.text)
-                    elif type(message).__name__ == "ResultMessage":
-                        logger.info(f"App {spec.name}: Received result message")
-                        response_text.append(str(message.result))
-
-                # Validate that files were actually created
-                created_files = list(app_dir.glob("**/*"))
-                if not created_files:
-                    raise ValueError("No files were generated by Claude")
+                # Create app directory
+                app_dir = self.output_directory / spec.name.lower().replace(" ", "_")
+                app_dir.mkdir(exist_ok=True)
 
                 logger.info(
-                    f"Successfully generated app: {spec.name} with {len(created_files)} files"
+                    f"Starting generation for app: {spec.name} (attempt {attempt + 1}/{max_retries})"
                 )
 
-                return {
-                    "success": True,
-                    "app_name": spec.name,
-                    "output_directory": str(app_dir),
-                    "response": "".join(response_text),
-                    "files_created": [str(f) for f in created_files],
-                    "message_count": message_count,
-                    "generation_time": datetime.now().isoformat(),
-                    "attempt": attempt + 1,
-                }
+                async with ClaudeSDKClient(
+                    options=ClaudeCodeOptions(
+                        system_prompt=system_prompt,
+                        max_turns=20,  # Increased for GitHub/Vercel setup
+                        allowed_tools=["Read", "Write", "Bash", "Grep", "WebSearch"],
+                        continue_conversation=False,  # Start fresh each time
+                    )
+                ) as client:
+
+                    # Generate the application with detailed progress tracking
+                    await client.query(generation_prompt)
+
+                    response_text = []
+                    message_count = 0
+
+                    async for message in client.receive_response():
+                        message_count += 1
+                        if hasattr(message, "content"):
+                            for block in message.content:
+                                if hasattr(block, "text"):
+                                    response_text.append(block.text)
+                        elif type(message).__name__ == "ResultMessage":
+                            logger.info(f"App {spec.name}: Received result message")
+                            response_text.append(str(message.result))
+
+                    # Validate that files were actually created
+                    created_files = list(app_dir.glob("**/*"))
+                    if not created_files:
+                        raise ValueError("No files were generated by Claude")
+
+                    logger.info(
+                        f"Successfully generated app: {spec.name} with {len(created_files)} files"
+                    )
+
+                    return {
+                        "success": True,
+                        "app_name": spec.name,
+                        "output_directory": str(app_dir),
+                        "response": "".join(response_text),
+                        "files_created": [str(f) for f in created_files],
+                        "message_count": message_count,
+                        "generation_time": datetime.now().isoformat(),
+                        "attempt": attempt + 1,
+                    }
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}"
+                )
+
+                if attempt == max_retries - 1:  # Last attempt
+                    logger.error(
+                        f"All {max_retries} attempts failed for app {spec.name}: {error_msg}"
+                    )
+                    return {
+                        "success": False,
+                        "app_name": spec.name,
+                        "error": error_msg,
+                        "generation_time": datetime.now().isoformat(),
+                        "attempts": max_retries,
+                    }
+
+                # Wait before retry
+                await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
 
     def generate_app_sync(self, spec: AppSpecification) -> Dict[str, Any]:
         """
