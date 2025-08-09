@@ -1,5 +1,6 @@
 import { AppSpecification, GenerationResult } from './types'
 import { VercelDeployer } from './vercelDeployer'
+import { Logger } from './logger'
 import fs from 'fs'
 import path from 'path'
 
@@ -7,16 +8,23 @@ export class AppGenerator {
   private outputDirectory: string
   private deployer: VercelDeployer
   private enableDeployment: boolean
+  private logger: Logger
 
   constructor(outputDirectory: string = 'generated_apps', enableDeployment: boolean = true) {
     this.outputDirectory = outputDirectory
     this.enableDeployment = enableDeployment
     this.deployer = new VercelDeployer()
+    this.logger = Logger.getInstance()
     
     // Ensure output directory exists
     if (!fs.existsSync(this.outputDirectory)) {
       fs.mkdirSync(this.outputDirectory, { recursive: true })
     }
+    
+    this.logger.info(`AppGenerator initialized`, {
+      outputDirectory: this.outputDirectory,
+      enableDeployment: this.enableDeployment
+    })
   }
 
   private createSystemPrompt(spec: AppSpecification): string {
@@ -81,7 +89,10 @@ Include proper documentation with docstrings for all functions and classes. Ensu
       // Auto-deploy to Vercel if enabled and it's a React app
       if (this.enableDeployment && spec.tech_stack?.toLowerCase().includes('react')) {
         try {
-          console.log(`🚀 Auto-deploying ${spec.name} to Vercel...`)
+          this.logger.deployment(`Starting auto-deployment`, spec.name, {
+            appDir,
+            techStack: spec.tech_stack
+          })
           deploymentStatus = 'deploying'
           
           const deployResult = await this.deployer.deployApp(appDir, spec.name)
@@ -89,15 +100,31 @@ Include proper documentation with docstrings for all functions and classes. Ensu
           if (deployResult.success && deployResult.url) {
             deploymentUrl = deployResult.url
             deploymentStatus = 'deployed'
-            console.log(`✅ ${spec.name} deployed successfully: ${deploymentUrl}`)
+            this.logger.deployment(`Deployment successful`, spec.name, {
+              url: deploymentUrl,
+              deploymentId: deployResult.deploymentId,
+              isDemoMode: deployResult.url.includes('devshop.local')
+            })
           } else {
             deploymentStatus = 'failed'
-            console.log(`❌ Deployment failed for ${spec.name}: ${deployResult.error}`)
+            this.logger.error(`Deployment failed for ${spec.name}`, {
+              error: deployResult.error,
+              appDir
+            })
           }
         } catch (error) {
           deploymentStatus = 'failed'
-          console.log(`❌ Deployment error for ${spec.name}:`, error)
+          this.logger.error(`Deployment error for ${spec.name}`, {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            appDir
+          })
         }
+      } else {
+        this.logger.info(`Skipping deployment`, {
+          appName: spec.name,
+          reason: !this.enableDeployment ? 'Deployment disabled' : 'Non-React app',
+          techStack: spec.tech_stack
+        })
       }
 
       return {

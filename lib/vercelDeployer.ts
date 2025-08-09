@@ -82,26 +82,28 @@ export class VercelDeployer {
 
   private async deployWithAPI(appDir: string, appName: string): Promise<DeploymentResult> {
     try {
-      // For now, we'll use a mock deployment URL since Vercel API requires more complex setup
-      // In production, you would implement the full Vercel REST API integration
+      console.log(`📝 [DEMO MODE] Simulating deployment for ${appName}`)
+      console.log(`📁 App directory: ${appDir}`)
+      console.log(`🔧 For real deployment, configure VERCEL_TOKEN in .env.local`)
       
       // Simulate deployment time
       await new Promise(resolve => setTimeout(resolve, 3000))
       
-      // Generate a mock Vercel URL
+      // Generate a demo URL that clearly indicates it's not real
       const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9]/g, '-')
-      const mockUrl = `https://${sanitizedName}-${Math.random().toString(36).substr(2, 8)}.vercel.app`
+      const demoUrl = `https://demo-${sanitizedName}-preview.devshop.local`
       
-      console.log(`✅ Mock deployment successful: ${mockUrl}`)
+      console.log(`✅ [DEMO] Generated preview URL: ${demoUrl}`)
+      console.log(`⚠️  This is a demo URL - app is built locally but not deployed`)
       
       return {
         success: true,
-        url: mockUrl,
+        url: demoUrl,
         appName,
-        deploymentId: `dpl_${Math.random().toString(36).substr(2, 16)}`
+        deploymentId: `demo_${Math.random().toString(36).substr(2, 16)}`
       }
     } catch (error) {
-      console.error(`❌ API deployment failed:`, error)
+      console.error(`❌ Deployment simulation failed:`, error)
       throw error
     }
   }

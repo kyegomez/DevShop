@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, Play, Download, FileText, Users, Zap, ExternalLink, Rocket } from 'lucide-react'
+import { Upload, Play, Download, FileText, Users, Zap, ExternalLink, Rocket, Terminal, X } from 'lucide-react'
 
 interface AppSpec {
   name: string
@@ -16,6 +16,8 @@ export default function Home() {
   const [apps, setApps] = useState<AppSpec[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [results, setResults] = useState<any>(null)
+  const [showLogs, setShowLogs] = useState(false)
+  const [logs, setLogs] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,16 +112,40 @@ export default function Home() {
     }
   }
 
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch('/api/logs')
+      const data = await response.json()
+      if (data.success) {
+        setLogs(data.logs)
+      }
+    } catch (error) {
+      console.error('Failed to fetch logs:', error)
+    }
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="text-center">
+      <div className="text-center relative">
         <h2 className="text-4xl font-bold text-gray-900 mb-4">
           Build Millions of Apps at Once
         </h2>
         <p className="text-xl text-gray-600 max-w-3xl mx-auto">
           A multi-agent structure that can build multiple applications in parallel using AI-powered code generation
         </p>
+        
+        {/* Logs Button */}
+        <button
+          onClick={() => {
+            setShowLogs(!showLogs)
+            if (!showLogs) fetchLogs()
+          }}
+          className="absolute top-0 right-0 flex items-center space-x-2 px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm"
+        >
+          <Terminal className="h-4 w-4" />
+          <span>Logs</span>
+        </button>
       </div>
 
       {/* Features */}
@@ -140,6 +166,60 @@ export default function Home() {
           <p className="text-gray-600">Define app specifications in a simple CSV format for batch processing</p>
         </div>
       </div>
+
+      {/* Logs Viewer */}
+      {showLogs && (
+        <div className="bg-gray-900 rounded-lg p-6 shadow-sm border">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <Terminal className="h-5 w-5 mr-2" />
+              System Logs
+            </h3>
+            <div className="flex space-x-2">
+              <button
+                onClick={fetchLogs}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={() => setShowLogs(false)}
+                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div className="bg-black rounded p-4 h-64 overflow-y-auto font-mono text-sm">
+            {logs.length === 0 ? (
+              <div className="text-gray-400">No logs available. Generate some apps to see logs here.</div>
+            ) : (
+              logs.map((log, index) => (
+                <div
+                  key={index}
+                  className={`mb-2 ${
+                    log.level === 'ERROR' ? 'text-red-400' :
+                    log.level === 'WARN' ? 'text-yellow-400' :
+                    log.level === 'DEPLOY' ? 'text-green-400' :
+                    'text-gray-300'
+                  }`}
+                >
+                  <span className="text-gray-500">
+                    [{new Date(log.timestamp).toLocaleTimeString()}]
+                  </span>
+                  <span className="ml-2 font-bold">[{log.level}]</span>
+                  <span className="ml-2">{log.message}</span>
+                  {log.context && (
+                    <div className="ml-4 text-xs text-gray-400 mt-1">
+                      {JSON.stringify(log.context, null, 2)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* File Upload */}
       <div className="bg-white rounded-lg p-6 shadow-sm border">
@@ -218,13 +298,33 @@ export default function Home() {
                     {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
                   </span>
                   {app.status === 'deployed' && app.deploymentUrl && (
-                    <button
-                      onClick={() => window.open(app.deploymentUrl, '_blank')}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      <span>Show App</span>
-                    </button>
+                    <>
+                      {app.deploymentUrl.includes('devshop.local') ? (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              const appName = app.name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+                              const localPath = `public/generated_apps/${appName}`
+                              alert(`🎯 Demo Mode!\n\nThis app was built locally at:\n${localPath}\n\nTo deploy to real Vercel:\n1. Add VERCEL_TOKEN to .env.local\n2. Run generation again\n\nClick OK to view local files`)
+                              // In a real app, you might open the local directory or show the built files
+                            }}
+                            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                          >
+                            <FileText className="h-4 w-4" />
+                            <span>View Files</span>
+                          </button>
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Demo Mode</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => window.open(app.deploymentUrl, '_blank')}
+                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          <span>Show App</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
