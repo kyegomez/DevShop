@@ -16,10 +16,7 @@ import logging
 from datetime import datetime
 import multiprocessing
 import threading
-
-# For now, we'll create a mock implementation since claude-code-sdk isn't installed
-# In production, you would use: from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
-
+import os
 
 def get_optimal_worker_count() -> int:
     """
@@ -32,7 +29,7 @@ def get_optimal_worker_count() -> int:
         int: Optimal number of worker threads
     """
     try:
-        cpu_count = multiprocessing.cpu_count()
+        cpu_count = os.cpu_count()
         # Use 95% of CPU cores for optimal performance without overwhelming the system
         optimal_workers = max(1, int(cpu_count * 0.95))
         return optimal_workers
@@ -383,10 +380,6 @@ if __name__ == "__main__":
         Returns:
             Dict containing generation results
         """
-        # This would be the real implementation using Claude SDK
-        # Commented out since claude-code-sdk is not installed
-
-        """
         try:
             from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
             
@@ -434,10 +427,6 @@ if __name__ == "__main__":
                 "error": str(e),
                 "generation_time": datetime.now().isoformat()
             }
-        """
-
-        # For now, use mock implementation
-        return await self.generate_app_mock(spec)
 
     def generate_app_sync(self, spec: AppSpecification) -> Dict[str, Any]:
         """
@@ -761,98 +750,3 @@ class MultiAppOrchestrator:
             raise
 
 
-# CLI interface
-def main():
-    """
-    Main CLI interface for the concurrent multi-app generator.
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Generate multiple apps concurrently from CSV specifications",
-        epilog="Uses optimal number of CPU cores for maximum performance",
-    )
-    parser.add_argument("csv_file", help="Path to CSV file with app specifications")
-    parser.add_argument(
-        "--output-dir",
-        default="generated_apps",
-        help="Output directory for generated apps",
-    )
-    parser.add_argument(
-        "--max-concurrent",
-        type=int,
-        default=None,
-        help="Maximum concurrent app generations (default: auto-detect based on CPU cores)",
-    )
-    parser.add_argument(
-        "--no-progress", action="store_true", help="Disable progress dashboard display"
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level",
-    )
-
-    args = parser.parse_args()
-
-    # Configure logging
-    logging.basicConfig(level=getattr(logging, args.log_level))
-
-    try:
-        # Show system info
-        cpu_cores = multiprocessing.cpu_count()
-        optimal_workers = get_optimal_worker_count()
-        max_concurrent = (
-            args.max_concurrent if args.max_concurrent is not None else optimal_workers
-        )
-
-        print(f"🖥️  System: {cpu_cores} CPU cores detected")
-        print(f"⚡ Workers: Using {max_concurrent} concurrent workers")
-        print(f"📁 Input: {args.csv_file}")
-        print(f"📁 Output: {args.output_dir}")
-
-        orchestrator = MultiAppOrchestrator(
-            csv_file_path=args.csv_file,
-            output_directory=args.output_dir,
-            max_concurrent=max_concurrent,
-            show_progress=not args.no_progress,
-        )
-
-        # Generate all apps concurrently
-        results = orchestrator.generate_all_apps()
-
-        # Save results to JSON file
-        results_file = Path(args.output_dir) / "generation_results.json"
-        with open(results_file, "w") as f:
-            json.dump(results, f, indent=2)
-
-        print("\n" + "=" * 60)
-        print("🎉 CONCURRENT GENERATION SUMMARY")
-        print("=" * 60)
-        print(f"📊 Total apps: {results['total_apps']}")
-        print(f"✅ Successful: {results['successful_apps']}")
-        print(f"❌ Failed: {results['failed_apps']}")
-        print(f"⚡ Workers used: {results['concurrent_workers']}")
-        print(f"💻 CPU cores: {results['cpu_cores']}")
-        print(f"⏱️  Total time: {results['total_time_seconds']:.2f} seconds")
-        print(
-            f"📈 Avg per app: {results['total_time_seconds']/results['total_apps']:.2f} seconds"
-        )
-        print(f"💾 Results saved: {results_file}")
-
-        if results["failed_apps"] > 0:
-            print(
-                f"\n⚠️  {results['failed_apps']} apps failed to generate - check logs for details"
-            )
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return 1
-
-    return 0
-
-
-if __name__ == "__main__":
-    exit_code = main()
-    exit(exit_code)
