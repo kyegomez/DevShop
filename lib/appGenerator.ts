@@ -43,62 +43,151 @@ export class AppGenerator {
     const isReact = spec.tech_stack?.toLowerCase().includes('react')
     const techStack = isReact ? 'Next.js 14 with TypeScript and Tailwind CSS' : spec.tech_stack || 'Python'
     
-    return `You are an expert software developer and architect. Create a complete, production-ready application based on this specification:
+    return `You are an expert product strategist, UX researcher, and full-stack developer. 
 
-**Application:** ${spec.name}
-**Description:** ${spec.description}
-**Goal:** ${spec.app_goal}
+PHASE 1 - RESEARCH & IDEATION:
+First, deeply analyze and expand on this user idea:
+
+**Original Concept:** ${spec.name} - ${spec.description}
 **Target User:** ${spec.target_user}
 **Main Problem:** ${spec.main_problem}
+**Goal:** ${spec.app_goal}
 **Design Preferences:** ${spec.design_preferences}
 **Tech Stack:** ${techStack}
 **Complexity:** ${spec.complexity_level || 'medium'}
 **Additional Requirements:** ${spec.additional_requirements || 'None'}
 
+RESEARCH TASKS:
+1. **Market Analysis**: What similar solutions exist? What gaps can we fill?
+2. **User Journey Mapping**: How would ${spec.target_user} discover, use, and benefit from this app?
+3. **Feature Prioritization**: What are the MUST-HAVE vs NICE-TO-HAVE features?
+4. **Pain Point Deep Dive**: What are ALL the sub-problems within "${spec.main_problem}"?
+5. **User Personas**: Create 2-3 specific user personas who would use this app
+6. **Value Proposition**: What makes this app uniquely valuable?
+7. **Success Metrics**: How would we measure if this app solves the problem?
+
+PHASE 2 - ENHANCED CONCEPT:
+Based on your research, expand the original idea into a comprehensive product vision:
+- Enhanced feature set that goes beyond the basic description
+- Specific user workflows and interactions
+- Content strategy and data requirements
+- Monetization or engagement strategies (if applicable)
+- Accessibility and inclusion considerations
+
+PHASE 3 - IMPLEMENTATION:
+Build a production-ready application that reflects this enhanced vision:
+
 ${isReact ? `
-REQUIREMENTS FOR NEXT.JS 14 APP:
-1. Create a complete Next.js 14 app with App Router
-2. Use TypeScript for all components
-3. Style with Tailwind CSS 
-4. Use lucide-react for icons
-5. Make it responsive and modern
-6. Include proper error handling
-7. Follow Next.js 14 best practices
-8. Make it production-ready for Vercel deployment
+NEXT.JS 14 APP REQUIREMENTS:
 
-MUST INCLUDE THESE FILES:
-- app/page.tsx (main page component)
-- app/layout.tsx (root layout)
-- app/globals.css (global styles with Tailwind)
-- package.json (with Next.js 14, React 18, TypeScript, Tailwind)
-- next.config.js (Next.js configuration)
-- tailwind.config.js (Tailwind configuration)
-- tsconfig.json (TypeScript configuration)
-- README.md (setup and deployment instructions)
+**Core Technical Stack:**
+- Next.js 14 with App Router and TypeScript
+- Tailwind CSS for styling with custom design system
+- Lucide React for icons and React Hook Form for forms
+- Local state management with useState/useReducer
+- Responsive design (mobile-first approach)
 
-The app/page.tsx should be a fully functional component that solves the user's problem with:
-- Modern UI/UX following the design preferences
-- Interactive elements and state management
-- Proper TypeScript types
-- Responsive design
-- Error boundaries and loading states
-- Accessibility features
+**Advanced Features Based on Research:**
+1. **Multi-Page Application** - Create logical page structure:
+   - Landing page that hooks users immediately
+   - Main dashboard/workspace for core functionality  
+   - About/How-it-works page explaining value proposition
+   - Contact/Support page for user engagement
+
+2. **Enhanced User Experience:**
+   - Onboarding flow for new users
+   - Interactive tutorials or guided tours
+   - Progress indicators and feedback systems
+   - Search and filtering capabilities
+   - Data persistence (localStorage/sessionStorage)
+
+3. **Content & Data Strategy:**
+   - Dynamic content based on user personas identified
+   - Sample data that demonstrates real value
+   - Export/import functionality where relevant
+   - Analytics tracking for user behavior
+
+4. **Modern UI/UX Patterns:**
+   - Card-based layouts for information hierarchy
+   - Modal dialogs for secondary actions
+   - Toast notifications for user feedback
+   - Loading skeletons and progressive enhancement
+   - Dark/light mode toggle if appropriate
+
+**REQUIRED FILE STRUCTURE:**
+- app/page.tsx (compelling landing page)
+- app/dashboard/page.tsx (main application interface)
+- app/about/page.tsx (value proposition & how it works)
+- app/layout.tsx (root layout with navigation)
+- app/globals.css (comprehensive design system)
+- app/components/ (reusable UI components)
+- package.json (optimized dependencies)
+- next.config.js, tailwind.config.js, tsconfig.json
+- README.md (comprehensive setup & value proposition)
+
+**Landing Page Requirements:**
+- Hero section that immediately communicates value
+- Social proof or testimonials (mock data)
+- Feature highlights based on research
+- Clear call-to-action to start using the app
+- FAQ section addressing common concerns
+
+**Main Application Features:**
+- Implement ALL identified must-have features
+- Include sample data that showcases capabilities
+- Real functionality, not just UI mockups
+- Form validation and error handling
+- Responsive design for all device sizes
 ` : `
-REQUIREMENTS FOR PYTHON APP:
-1. Create a complete Python application
-2. Include proper project structure
-3. Follow Python best practices (PEP 8)
-4. Include error handling and validation
-5. Add comprehensive documentation
-6. Make it production-ready
+PYTHON APPLICATION REQUIREMENTS:
 
-MUST INCLUDE THESE FILES:
-- main.py (main application file)
-- requirements.txt (Python dependencies)
-- README.md (setup and usage instructions)
+**Enhanced Python App Based on Research:**
+1. **Comprehensive Application Structure:**
+   - main.py (entry point with enhanced CLI interface)
+   - core/ (business logic modules)
+   - utils/ (helper functions and utilities)
+   - data/ (sample data and configurations)
+   - tests/ (unit tests for key functionality)
+
+2. **Advanced Features:**
+   - Command-line interface with argparse
+   - Configuration management (config files)
+   - Data persistence (JSON/CSV files)
+   - Error logging and user feedback
+   - Progress indicators for long operations
+   - Help system and documentation
+
+3. **User Experience Focus:**
+   - Interactive prompts for user input
+   - Clear success/error messages
+   - Sample data to demonstrate capabilities
+   - Export functionality for results
+   - Backup and restore features
+
+**REQUIRED FILES:**
+- main.py (enhanced CLI application)
+- core/app_logic.py (main business logic)
+- utils/helpers.py (utility functions)
+- config/settings.py (configuration management)
+- data/sample_data.json (demonstration data)
+- requirements.txt (comprehensive dependencies)
+- README.md (detailed setup and usage guide)
+- tests/test_main.py (basic unit tests)
 `}
 
-Respond with a JSON object containing the file structure:
+**CRITICAL INSTRUCTIONS:**
+
+1. **Think Like a Product Manager First**: Before coding, deeply understand the user's world, their daily challenges, and how this app fits into their workflow.
+
+2. **Create Real Value**: Don't just build what's described - build what's NEEDED based on your research and user analysis.
+
+3. **Show, Don't Tell**: Include realistic sample data, working examples, and demonstration content that proves the app's value immediately.
+
+4. **Design for Growth**: Create a foundation that could realistically evolve into a larger product.
+
+5. **Focus on User Success**: Every feature should have a clear purpose in helping ${spec.target_user} achieve ${spec.app_goal}.
+
+Respond with a JSON object containing the complete file structure:
 {
   "files": {
     "filename.ext": "file content here",
@@ -106,7 +195,7 @@ Respond with a JSON object containing the file structure:
   }
 }
 
-Focus on creating a FULLY FUNCTIONAL application that directly addresses "${spec.main_problem}" for "${spec.target_user}". Make it production-ready with proper error handling, documentation, and following modern best practices.`
+**Your mission**: Create an application that doesn't just solve "${spec.main_problem}" but creates a delightful, comprehensive solution that users would actually want to use and recommend to others.`
   }
 
   private async generateWithClaude(spec: AppSpecification): Promise<{ files: Record<string, string> }> {
@@ -118,7 +207,7 @@ Focus on creating a FULLY FUNCTIONAL application that directly addresses "${spec
       const response = await this.anthropic.messages.create({
         model: 'claude-3-sonnet-20240229',
         max_tokens: 8000,
-        temperature: 0.7,
+        temperature: 0.8,
         messages: [
           {
             role: 'user',
