@@ -93,7 +93,9 @@ export class VercelDeployer {
       // Step 2: Create deployment using file uploads
       const deploymentUrl = await this.createDeployment(appDir, projectName, projectId)
       
-      console.log(`✅ [VERCEL API] Deployment successful: ${deploymentUrl}`)
+      console.log(`✅ [VERCEL API] Deployment initiated: ${deploymentUrl}`)
+      console.log(`⏳ Deployment will be ready in ~30-60 seconds`)
+      console.log(`📝 Check logs above for real-time deployment status`)
       
       return {
         success: true,
@@ -183,11 +185,16 @@ export class VercelDeployer {
       }
 
       const deployment = await deployResponse.json()
+      const deploymentUrl = `https://${deployment.url}`
       
-      // Wait for deployment to be ready
-      await this.waitForDeployment(deployment.id)
+      console.log(`🚀 Deployment created: ${deploymentUrl}`)
+      console.log(`📋 Deployment ID: ${deployment.id}`)
       
-      return `https://${deployment.url}`
+      // Start monitoring deployment status in background (don't await)
+      this.monitorDeploymentInBackground(deployment.id, projectName)
+      
+      // Return URL immediately - don't wait for deployment to finish
+      return deploymentUrl
     } catch (error) {
       console.error(`❌ Deployment creation failed:`, error)
       throw error
@@ -246,28 +253,57 @@ export class VercelDeployer {
     return files
   }
 
-  private async waitForDeployment(deploymentId: string): Promise<void> {
-    console.log(`⏳ Waiting for deployment ${deploymentId} to be ready...`)
-    
-    for (let i = 0; i < 30; i++) { // Wait up to 5 minutes
-      const response = await fetch(`https://api.vercel.com/v13/deployments/${deploymentId}`, {
-        headers: {
-          'Authorization': `Bearer ${this.vercelToken}`
-        }
-      })
+  private monitorDeploymentInBackground(deploymentId: string, projectName: string): void {
+    // Don't await this - let it run in background
+    this.checkDeploymentStatus(deploymentId, projectName).catch(error => {
+      console.error(`❌ Background monitoring failed for ${projectName}:`, error.message)
+    })
+  }
 
-      if (response.ok) {
-        const deployment = await response.json()
-        if (deployment.readyState === 'READY') {
-          console.log(`✅ Deployment ${deploymentId} is ready`)
-          return
+  private async checkDeploymentStatus(deploymentId: string, projectName: string): Promise<void> {
+    console.log(`🔍 Background monitoring deployment ${deploymentId} for ${projectName}`)
+    
+    for (let i = 0; i < 20; i++) { // Check for up to 200 seconds
+      try {
+        const response = await fetch(`https://api.vercel.com/v13/deployments/${deploymentId}`, {
+          headers: {
+            'Authorization': `Bearer ${this.vercelToken}`
+          }
+        })
+
+        if (response.ok) {
+          const deployment = await response.json()
+          const state = deployment.readyState || deployment.state
+          
+          if (i % 3 === 0) { // Log every 30 seconds
+            console.log(`📊 ${projectName} deployment status: ${state} (${i * 10}s elapsed)`)
+          }
+          
+          if (state === 'READY') {
+            console.log(`✅ ${projectName} deployment completed successfully after ${i * 10} seconds`)
+            console.log(`🌐 Live at: https://${deployment.url}`)
+            return
+          }
+          
+          if (state === 'ERROR' || state === 'CANCELED') {
+            console.error(`❌ ${projectName} deployment failed with status: ${state}`)
+            return
+          }
+        } else {
+          if (i % 6 === 0) { // Log errors every minute
+            console.log(`⚠️ Status check failed for ${projectName}: ${response.status}`)
+          }
+        }
+      } catch (error) {
+        if (i % 6 === 0) {
+          console.error(`⚠️ Error monitoring ${projectName}:`, error.message)
         }
       }
 
       await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
     }
 
-    throw new Error('Deployment timeout - took longer than 5 minutes')
+    console.log(`⏰ Stopped monitoring ${projectName} after 200 seconds - check Vercel dashboard for final status`)
   }
 
   private createDemoDeployment(appName: string): DeploymentResult {
