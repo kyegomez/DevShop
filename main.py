@@ -7,17 +7,21 @@ multiple applications using Claude's code generation capabilities.
 
 import asyncio
 import concurrent.futures
-import pandas as pd
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Dict, Optional, Any
-from loguru import logger
-from datetime import datetime
 import multiprocessing
-import threading
 import os
-from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
-from ui_dashboard import UIManager
+import threading
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
+from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
+from loguru import logger
+from swarms import Agent
+
+from examples.ui_dashboard import UIManager
+
 
 
 def get_optimal_worker_count() -> int:
@@ -55,6 +59,7 @@ class AppSpecification:
     additional_requirements: Optional[str] = None
     tech_stack: Optional[str] = None
     complexity_level: Optional[str] = "medium"
+    enriched_spec: Optional[str] = None
 
     def __post_init__(self):
         """Validate and clean the specification data."""
@@ -178,6 +183,7 @@ class ClaudeAppGenerator:
         retries: int = 3,
         retry_delay: float = 2.0,
         ui_manager: Optional[UIManager] = None,
+        enable_enrichment: bool = False,
     ):
         """
         Initialize the app generator.
@@ -185,12 +191,14 @@ class ClaudeAppGenerator:
         Args:
             output_directory: Directory where generated apps will be stored
             ui_manager: Optional UI manager for real-time updates
+            enable_enrichment: Whether to use product_spec_enricher for enhanced prompts
         """
         self.retries = retries
         self.retry_delay = retry_delay
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
         self.ui_manager = ui_manager
+        self.enable_enrichment = enable_enrichment
 
     def _create_system_prompt(self, spec: AppSpecification) -> str:
         """
@@ -202,9 +210,8 @@ class ClaudeAppGenerator:
         Returns:
             str: System prompt for Claude
         """
-        return f"""You are an expert software developer and architect specializing in creating production-ready applications. You will build a complete, functional application based on the following specification.
-
-**APPLICATION SPECIFICATION:**
+        # Use enriched specification if available, otherwise use original spec
+        base_spec_section = f"""**APPLICATION SPECIFICATION:**
 - **Name:** {spec.name}
 - **Description:** {spec.description}
 - **Primary Goal:** {spec.app_goal}
@@ -213,7 +220,20 @@ class ClaudeAppGenerator:
 - **Design Preferences:** {spec.design_preferences}
 - **Technology Stack:** {spec.tech_stack}
 - **Complexity Level:** {spec.complexity_level}
-- **Additional Requirements:** {spec.additional_requirements}
+- **Additional Requirements:** {spec.additional_requirements}"""
+        
+        enriched_section = ""
+        if spec.enriched_spec:
+            enriched_section = f"""
+
+**ENHANCED PRODUCT SPECIFICATION:**
+{spec.enriched_spec}
+
+**IMPORTANT:** Use the enhanced product specification above as your primary guide. It provides detailed requirements, features, and technical specifications that should drive your implementation decisions."""
+        
+        return f"""You are an expert software developer and architect specializing in creating production-ready applications. You will build a complete, functional application based on the following specification.
+
+{base_spec_section}{enriched_section}
 
 **DEVELOPMENT GUIDELINES:**
 
@@ -267,7 +287,12 @@ Create a professional-grade application that directly addresses the specified pr
         Returns:
             str: Generation prompt
         """
-        return f"""Build the complete "{spec.name}" application based on the detailed specification in your system prompt.
+        # Add reference to enriched spec if available
+        enrichment_reference = ""
+        if spec.enriched_spec:
+            enrichment_reference = " Pay special attention to the enhanced product specification provided in your system prompt, which contains detailed requirements and feature specifications."
+            
+        return f"""Build the complete "{spec.name}" application based on the detailed specification in your system prompt.{enrichment_reference}
 
 **IMPLEMENTATION REQUIREMENTS:**
 
@@ -345,10 +370,33 @@ Start by creating the project structure, then implement the core functionality s
         """
         max_retries = self.retries
 
+        # Enrich specification if enabled
+        if self.enable_enrichment and not spec.enriched_spec:
+            if self.ui_manager:
+                self.ui_manager.update_app_status(
+                    spec.name, "running", 5.0, "Enriching product specification..."
+                )
+            try:
+                logger.info(f"Enriching specification for app: {spec.name}")
+                spec.enriched_spec = product_spec_enricher(spec)
+                if self.ui_manager:
+                    self.ui_manager.log_app_activity(spec.name, "Product specification enriched")
+                    self.ui_manager.update_app_status(
+                        spec.name, "running", 8.0, "Specification enriched, initializing Claude SDK..."
+                    )
+                logger.info(f"Successfully enriched specification for app: {spec.name}")
+            except Exception as e:
+                logger.warning(f"Failed to enrich specification for {spec.name}: {e}")
+                if self.ui_manager:
+                    self.ui_manager.log_app_activity(spec.name, f"Enrichment failed: {e}")
+                    self.ui_manager.update_app_status(
+                        spec.name, "running", 8.0, "Enrichment failed, proceeding with original spec..."
+                    )
+
         # Update UI that generation is starting
         if self.ui_manager:
             self.ui_manager.update_app_status(
-                spec.name, "running", 0.0, "Initializing Claude SDK..."
+                spec.name, "running", 10.0, "Initializing Claude SDK..."
             )
 
         for attempt in range(max_retries):
@@ -366,7 +414,7 @@ Start by creating the project structure, then implement the core functionality s
 
                 if self.ui_manager:
                     self.ui_manager.update_app_status(
-                        spec.name, "running", 10.0, f"Starting generation (attempt {attempt + 1})"
+                        spec.name, "running", 15.0, f"Starting generation (attempt {attempt + 1})"
                     )
 
                 async with ClaudeSDKClient(
@@ -380,7 +428,7 @@ Start by creating the project structure, then implement the core functionality s
 
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
-                            spec.name, "running", 20.0, "Connected to Claude, sending prompt..."
+                            spec.name, "running", 25.0, "Connected to Claude, sending prompt..."
                         )
 
                     # Generate the application with detailed progress tracking
@@ -392,12 +440,12 @@ Start by creating the project structure, then implement the core functionality s
 
                     if self.ui_manager:
                         self.ui_manager.update_app_status(
-                            spec.name, "running", 30.0, "Processing Claude responses..."
+                            spec.name, "running", 35.0, "Processing Claude responses..."
                         )
 
                     async for message in client.receive_response():
                         message_count += 1
-                        current_progress = min(30.0 + (message_count * progress_increment), 90.0)
+                        current_progress = min(35.0 + (message_count * progress_increment), 90.0)
                         
                         if hasattr(message, "content"):
                             for block in message.content:
@@ -506,6 +554,49 @@ Start by creating the project structure, then implement the core functionality s
         return asyncio.run(self.generate_app_with_claude(spec))
 
 
+
+def product_spec_enricher(spec: AppSpecification) -> str:
+    """
+    Transform app configuration into a concise, actionable product specification.
+    """
+    agent = Agent(
+        agent_name="Product-Specification-Agent",
+        agent_description="Expert product manager and spec writer",
+        system_prompt=(
+            "You are an expert product manager. Given a basic app idea, "
+            "write a clear, actionable product spec for developers. "
+            "Be concise, practical, and cover key requirements, users, features, "
+            "tech stack, and success criteria."
+        ),
+        model_name="claude-sonnet-4-20250514",
+        dynamic_temperature_enabled=True,
+        output_type="str-all-except-first",
+        max_loops=1,
+    )
+
+    enrichment_prompt = (
+        f"Given this app idea:\n"
+        f"- Name: {spec.name}\n"
+        f"- Description: {spec.description}\n"
+        f"- Goal: {spec.app_goal}\n"
+        f"- Target User: {spec.target_user}\n"
+        f"- Main Problem: {spec.main_problem}\n"
+        f"- Design Preferences: {spec.design_preferences}\n"
+        f"- Tech Stack: {spec.tech_stack}\n"
+        f"- Complexity: {spec.complexity_level}\n"
+        f"- Additional: {spec.additional_requirements}\n\n"
+        "Write a compact product specification including:\n"
+        "1. Executive summary (value, users, KPIs)\n"
+        "2. Key features (bulleted)\n"
+        "3. User flows or main use cases\n"
+        "4. Technical requirements (stack, APIs, data)\n"
+        "5. Success criteria\n"
+        "Keep it clear and actionable for a dev team."
+    )
+
+    enriched_spec = agent.run(task=enrichment_prompt)
+    return enriched_spec
+
 class MultiAppOrchestrator:
     """
     Orchestrates the concurrent generation of multiple applications from CSV specifications.
@@ -522,6 +613,7 @@ class MultiAppOrchestrator:
         show_progress: bool = True,
         enable_ui: bool = True,
         show_claude_output: bool = True,
+        enable_enrichment: bool = False,
     ):
         """
         Initialize the orchestrator.
@@ -534,6 +626,7 @@ class MultiAppOrchestrator:
             show_progress: Whether to show real-time progress dashboard
             enable_ui: Whether to enable the Rich console UI
             show_claude_output: Whether to show Claude agent outputs in UI
+            enable_enrichment: Whether to enable product specification enrichment
         """
         self.csv_file_path = csv_file_path
         self.output_directory = output_directory
@@ -543,6 +636,7 @@ class MultiAppOrchestrator:
         )
         self.show_progress = show_progress
         self.enable_ui = enable_ui
+        self.enable_enrichment = enable_enrichment
         
         # Initialize UI Manager
         self.ui_manager = UIManager(show_claude_output=show_claude_output) if enable_ui else None
@@ -552,7 +646,11 @@ class MultiAppOrchestrator:
         self.status_lock = threading.Lock()
 
         self.ingester = CSVAppIngester(csv_file_path)
-        self.generator = ClaudeAppGenerator(output_directory, ui_manager=self.ui_manager)
+        self.generator = ClaudeAppGenerator(
+            output_directory, 
+            ui_manager=self.ui_manager,
+            enable_enrichment=enable_enrichment
+        )
 
         logger.info(
             f"Initialized with {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
@@ -831,6 +929,7 @@ def run_multi_app_generation(
     max_concurrent: Optional[int] = None,
     enable_ui: bool = True,
     show_claude_output: bool = True,
+    enable_enrichment: bool = False,
 ) -> Dict[str, Any]:
     """
     Convenience function to run multi-app generation with Rich UI.
@@ -841,17 +940,21 @@ def run_multi_app_generation(
         max_concurrent: Maximum concurrent workers (auto-calculated if None)
         enable_ui: Whether to enable the Rich console UI
         show_claude_output: Whether to show Claude agent outputs in UI
+        enable_enrichment: Whether to enable product specification enrichment
         
     Returns:
         Dict containing generation results and statistics
         
     Example:
         ```python
-        # Run with Rich UI enabled
-        results = run_multi_app_generation("sample.csv", enable_ui=True)
+        # Run with Rich UI and enrichment enabled
+        results = run_multi_app_generation("sample.csv", enable_ui=True, enable_enrichment=True)
         
         # Run without UI (legacy mode)
         results = run_multi_app_generation("sample.csv", enable_ui=False)
+        
+        # Run with enrichment but without UI
+        results = run_multi_app_generation("sample.csv", enable_ui=False, enable_enrichment=True)
         ```
     """
     orchestrator = MultiAppOrchestrator(
@@ -860,33 +963,42 @@ def run_multi_app_generation(
         max_concurrent=max_concurrent,
         enable_ui=enable_ui,
         show_claude_output=show_claude_output,
+        enable_enrichment=enable_enrichment,
     )
     
     return orchestrator.run()
 
 
-if __name__ == "__main__":
-    import sys
+# if __name__ == "__main__":
+#     import sys
     
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <csv_file_path> [output_directory]")
-        print("Example: python main.py sample.csv artifacts")
-        sys.exit(1)
+#     if len(sys.argv) < 2:
+#         print("Usage: python main.py <csv_file_path> [output_directory] [--enrich]")
+#         print("Example: python main.py sample.csv artifacts")
+#         print("Example with enrichment: python main.py sample.csv artifacts --enrich")
+#         sys.exit(1)
     
-    csv_path = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "artifacts"
+#     csv_path = sys.argv[1]
+#     output_dir = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else "artifacts"
     
-    # Run with Rich UI enabled by default
-    try:
-        results = run_multi_app_generation(
-            csv_file_path=csv_path,
-            output_directory=output_dir,
-            enable_ui=True,
-            show_claude_output=True,
-        )
-        print(f"\n🎉 Generation completed! Results: {results}")
-    except KeyboardInterrupt:
-        print("\n⚠️ Generation interrupted by user")
-    except Exception as e:
-        print(f"\n❌ Generation failed: {e}")
-        sys.exit(1)
+#     # Check for enrichment flag
+#     enable_enrichment = "--enrich" in sys.argv
+    
+#     if enable_enrichment:
+#         print("🧠 Product specification enrichment enabled!")
+    
+#     # Run with Rich UI enabled by default
+#     try:
+#         results = run_multi_app_generation(
+#             csv_file_path=csv_path,
+#             output_directory=output_dir,
+#             enable_ui=True,
+#             show_claude_output=True,
+#             enable_enrichment=enable_enrichment,
+#         )
+#         print(f"\n🎉 Generation completed! Results: {results}")
+#     except KeyboardInterrupt:
+#         print("\n⚠️ Generation interrupted by user")
+#     except Exception as e:
+#         print(f"\n❌ Generation failed: {e}")
+#         sys.exit(1)

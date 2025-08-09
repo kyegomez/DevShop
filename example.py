@@ -31,6 +31,7 @@ def main():
             max_concurrent=None,  # Auto-detect optimal worker count
             show_progress=False,  # Disable progress dashboard
             enable_ui=True,
+            enable_enrichment=True,
         )
 
         # Generate all apps concurrently

@@ -8,7 +8,7 @@ This script simulates the app generation process to test the UI components.
 import asyncio
 import time
 import random
-from ui_dashboard import UIManager
+from examples.ui_dashboard import UIManager
 
 async def simulate_app_generation(ui_manager: UIManager, app_name: str):
     """Simulate app generation process for testing UI."""
