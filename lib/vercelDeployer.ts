@@ -296,7 +296,7 @@ export class VercelDeployer {
         }
       } catch (error) {
         if (i % 6 === 0) {
-          console.error(`⚠️ Error monitoring ${projectName}:`, error.message)
+          console.error(`⚠️ Error monitoring ${projectName}:`, error instanceof Error ? error.message : 'Unknown error')
         }
       }
 

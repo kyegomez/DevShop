@@ -3,18 +3,29 @@ import { VercelDeployer } from './vercelDeployer'
 import { Logger } from './logger'
 import fs from 'fs'
 import path from 'path'
+import Anthropic from '@anthropic-ai/sdk'
 
 export class AppGenerator {
   private outputDirectory: string
   private deployer: VercelDeployer
   private enableDeployment: boolean
   private logger: Logger
+  private anthropic: Anthropic
 
   constructor(outputDirectory: string = 'generated_apps', enableDeployment: boolean = true) {
     this.outputDirectory = outputDirectory
     this.enableDeployment = enableDeployment
     this.deployer = new VercelDeployer()
     this.logger = Logger.getInstance()
+    
+    // Initialize Anthropic client
+    const anthropicKey = process.env.ANTHROPIC_TOKEN
+    if (!anthropicKey) {
+      throw new Error('ANTHROPIC_TOKEN environment variable is required')
+    }
+    this.anthropic = new Anthropic({
+      apiKey: anthropicKey,
+    })
     
     // Ensure output directory exists
     if (!fs.existsSync(this.outputDirectory)) {
@@ -23,35 +34,118 @@ export class AppGenerator {
     
     this.logger.info(`AppGenerator initialized`, {
       outputDirectory: this.outputDirectory,
-      enableDeployment: this.enableDeployment
+      enableDeployment: this.enableDeployment,
+      anthropicConfigured: !!anthropicKey
     })
   }
 
   private createSystemPrompt(spec: AppSpecification): string {
-    return `You are an expert software developer and architect. You will create a complete, production-ready application based on the following specification:
+    const isReact = spec.tech_stack?.toLowerCase().includes('react')
+    const techStack = isReact ? 'Next.js 14 with TypeScript and Tailwind CSS' : spec.tech_stack || 'Python'
+    
+    return `You are an expert software developer and architect. Create a complete, production-ready application based on this specification:
 
-**Application Name:** ${spec.name}
+**Application:** ${spec.name}
 **Description:** ${spec.description}
 **Goal:** ${spec.app_goal}
 **Target User:** ${spec.target_user}
-**Main Problem Solved:** ${spec.main_problem}
+**Main Problem:** ${spec.main_problem}
 **Design Preferences:** ${spec.design_preferences}
-**Tech Stack:** ${spec.tech_stack || 'Python/React'}
-**Complexity Level:** ${spec.complexity_level || 'medium'}
+**Tech Stack:** ${techStack}
+**Complexity:** ${spec.complexity_level || 'medium'}
 **Additional Requirements:** ${spec.additional_requirements || 'None'}
 
-Create a complete application that includes:
-1. Proper project structure with all necessary files
-2. Clean, well-documented code following best practices
-3. User interface that matches the design preferences
-4. Error handling and input validation
-5. README with setup and usage instructions
-6. Configuration files (requirements.txt, package.json, etc.)
-7. Basic tests if applicable
+${isReact ? `
+REQUIREMENTS FOR NEXT.JS 14 APP:
+1. Create a complete Next.js 14 app with App Router
+2. Use TypeScript for all components
+3. Style with Tailwind CSS 
+4. Use lucide-react for icons
+5. Make it responsive and modern
+6. Include proper error handling
+7. Follow Next.js 14 best practices
+8. Make it production-ready for Vercel deployment
 
-Focus on creating a functional, user-friendly application that directly addresses the main problem for the target user. Make sure the code is production-ready and follows modern development practices.
+MUST INCLUDE THESE FILES:
+- app/page.tsx (main page component)
+- app/layout.tsx (root layout)
+- app/globals.css (global styles with Tailwind)
+- package.json (with Next.js 14, React 18, TypeScript, Tailwind)
+- next.config.js (Next.js configuration)
+- tailwind.config.js (Tailwind configuration)
+- tsconfig.json (TypeScript configuration)
+- README.md (setup and deployment instructions)
 
-Include proper documentation with docstrings for all functions and classes. Ensure the application can be run immediately after setup.`
+The app/page.tsx should be a fully functional component that solves the user's problem with:
+- Modern UI/UX following the design preferences
+- Interactive elements and state management
+- Proper TypeScript types
+- Responsive design
+- Error boundaries and loading states
+- Accessibility features
+` : `
+REQUIREMENTS FOR PYTHON APP:
+1. Create a complete Python application
+2. Include proper project structure
+3. Follow Python best practices (PEP 8)
+4. Include error handling and validation
+5. Add comprehensive documentation
+6. Make it production-ready
+
+MUST INCLUDE THESE FILES:
+- main.py (main application file)
+- requirements.txt (Python dependencies)
+- README.md (setup and usage instructions)
+`}
+
+Respond with a JSON object containing the file structure:
+{
+  "files": {
+    "filename.ext": "file content here",
+    "folder/filename.ext": "file content here"
+  }
+}
+
+Focus on creating a FULLY FUNCTIONAL application that directly addresses "${spec.main_problem}" for "${spec.target_user}". Make it production-ready with proper error handling, documentation, and following modern best practices.`
+  }
+
+  private async generateWithClaude(spec: AppSpecification): Promise<{ files: Record<string, string> }> {
+    this.logger.info(`Generating app with Claude API`, { appName: spec.name, techStack: spec.tech_stack })
+    
+    try {
+      const systemPrompt = this.createSystemPrompt(spec)
+      
+      const response = await this.anthropic.messages.create({
+        model: 'claude-3-sonnet-20240229',
+        max_tokens: 8000,
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'user',
+            content: systemPrompt
+          }
+        ]
+      })
+
+      const content = response.content[0]
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response type from Claude')
+      }
+
+      // Extract JSON from Claude's response
+      const jsonMatch = content.text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('Could not extract JSON from Claude response')
+      }
+
+      const result = JSON.parse(jsonMatch[0])
+      this.logger.info(`Claude generated ${Object.keys(result.files).length} files`, { appName: spec.name })
+      
+      return result
+    } catch (error) {
+      this.logger.error(`Claude API error for ${spec.name}`, { error: error instanceof Error ? error.message : 'Unknown error' })
+      throw error
+    }
   }
 
   async generateApp(spec: AppSpecification): Promise<GenerationResult> {
@@ -66,22 +160,24 @@ Include proper documentation with docstrings for all functions and classes. Ensu
         fs.mkdirSync(appDir, { recursive: true })
       }
 
-      // Simulate generation time based on complexity
-      const complexityDelays = { low: 2000, medium: 4000, high: 6000 }
-      const delay = complexityDelays[spec.complexity_level || 'medium']
-      await new Promise(resolve => setTimeout(resolve, delay))
+      this.logger.info(`Starting Claude-powered generation for ${spec.name}`)
 
-      // Create directory structure based on tech stack
+      // Generate app files using Claude
+      const claudeResult = await this.generateWithClaude(spec)
+      
+      // Write all generated files to disk
+      const files = await this.writeGeneratedFiles(appDir, claudeResult.files)
+      
+      // Add Vercel-specific configuration files for React apps
       if (spec.tech_stack?.toLowerCase().includes('react')) {
-        await this.createNextJsApp(appDir, spec)
-      } else if (spec.tech_stack?.toLowerCase().includes('python')) {
-        await this.createPythonApp(appDir, spec)
-      } else {
-        await this.createBasicApp(appDir, spec)
+        await this.addVercelConfig(appDir, spec)
       }
 
       const endTime = new Date()
-      const files = this.getAllFiles(appDir)
+      this.logger.info(`Claude generation completed for ${spec.name}`, { 
+        filesGenerated: files.length,
+        generationTime: endTime.getTime() - startTime.getTime()
+      })
 
       let deploymentUrl: string | undefined
       let deploymentStatus: 'pending' | 'deploying' | 'deployed' | 'failed' = 'pending'
@@ -127,11 +223,14 @@ Include proper documentation with docstrings for all functions and classes. Ensu
         })
       }
 
+      // Get final file list after all additions
+      const allFiles = this.getAllFiles(appDir)
+
       return {
         success: true,
         app_name: spec.name,
         output_directory: appDir,
-        files_created: files,
+        files_created: allFiles,
         generation_time: endTime.toISOString(),
         deployment_url: deploymentUrl,
         deployment_status: deploymentStatus
@@ -415,6 +514,58 @@ pytest-cov>=4.0.0`
     if (techStack?.toLowerCase().includes('python')) return 'requirements.txt'
     if (techStack?.toLowerCase().includes('react')) return 'package.json'
     return 'package.json'
+  }
+
+  private async writeGeneratedFiles(appDir: string, files: Record<string, string>): Promise<string[]> {
+    const createdFiles: string[] = []
+    
+    for (const [relativePath, content] of Object.entries(files)) {
+      const fullPath = path.join(appDir, relativePath)
+      const dir = path.dirname(fullPath)
+      
+      // Ensure directory exists
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+      
+      // Write file
+      fs.writeFileSync(fullPath, content, 'utf8')
+      createdFiles.push(relativePath)
+      
+      this.logger.info(`Created file: ${relativePath}`, { appDir, size: content.length })
+    }
+    
+    return createdFiles
+  }
+
+  private async addVercelConfig(appDir: string, spec: AppSpecification): Promise<void> {
+    // Add Vercel-specific configuration
+    const vercelConfig = {
+      functions: {
+        "app/api/*/route.ts": {
+          maxDuration: 60
+        }
+      }
+    }
+    
+    const vercelConfigPath = path.join(appDir, 'vercel.json')
+    if (!fs.existsSync(vercelConfigPath)) {
+      fs.writeFileSync(vercelConfigPath, JSON.stringify(vercelConfig, null, 2))
+      this.logger.info(`Added vercel.json configuration`, { appDir })
+    }
+
+    // Add PostCSS config if not present
+    const postcssConfigPath = path.join(appDir, 'postcss.config.js')
+    if (!fs.existsSync(postcssConfigPath)) {
+      const postcssConfig = `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`
+      fs.writeFileSync(postcssConfigPath, postcssConfig)
+      this.logger.info(`Added postcss.config.js`, { appDir })
+    }
   }
 
   private getAllFiles(dir: string): string[] {
