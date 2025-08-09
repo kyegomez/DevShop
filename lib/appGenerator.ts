@@ -1,12 +1,18 @@
 import { AppSpecification, GenerationResult } from './types'
+import { VercelDeployer } from './vercelDeployer'
 import fs from 'fs'
 import path from 'path'
 
 export class AppGenerator {
   private outputDirectory: string
+  private deployer: VercelDeployer
+  private enableDeployment: boolean
 
-  constructor(outputDirectory: string = 'generated_apps') {
+  constructor(outputDirectory: string = 'generated_apps', enableDeployment: boolean = true) {
     this.outputDirectory = outputDirectory
+    this.enableDeployment = enableDeployment
+    this.deployer = new VercelDeployer()
+    
     // Ensure output directory exists
     if (!fs.existsSync(this.outputDirectory)) {
       fs.mkdirSync(this.outputDirectory, { recursive: true })
@@ -69,12 +75,39 @@ Include proper documentation with docstrings for all functions and classes. Ensu
       const endTime = new Date()
       const files = this.getAllFiles(appDir)
 
+      let deploymentUrl: string | undefined
+      let deploymentStatus: 'pending' | 'deploying' | 'deployed' | 'failed' = 'pending'
+
+      // Auto-deploy to Vercel if enabled and it's a React app
+      if (this.enableDeployment && spec.tech_stack?.toLowerCase().includes('react')) {
+        try {
+          console.log(`🚀 Auto-deploying ${spec.name} to Vercel...`)
+          deploymentStatus = 'deploying'
+          
+          const deployResult = await this.deployer.deployApp(appDir, spec.name)
+          
+          if (deployResult.success && deployResult.url) {
+            deploymentUrl = deployResult.url
+            deploymentStatus = 'deployed'
+            console.log(`✅ ${spec.name} deployed successfully: ${deploymentUrl}`)
+          } else {
+            deploymentStatus = 'failed'
+            console.log(`❌ Deployment failed for ${spec.name}: ${deployResult.error}`)
+          }
+        } catch (error) {
+          deploymentStatus = 'failed'
+          console.log(`❌ Deployment error for ${spec.name}:`, error)
+        }
+      }
+
       return {
         success: true,
         app_name: spec.name,
         output_directory: appDir,
         files_created: files,
-        generation_time: endTime.toISOString()
+        generation_time: endTime.toISOString(),
+        deployment_url: deploymentUrl,
+        deployment_status: deploymentStatus
       }
 
     } catch (error) {

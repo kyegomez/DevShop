@@ -8,11 +8,12 @@ import os from 'os'
 export const runtime = 'nodejs'
 
 interface ProgressUpdate {
-  type: 'app_update' | 'final_results'
+  type: 'app_update' | 'final_results' | 'deployment_update'
   app_name?: string
   status?: AppStatus
   progress?: number
   results?: any
+  deployment_url?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -91,12 +92,25 @@ export async function POST(request: NextRequest) {
               // Generate the app
               const result = await generator.generateApp(spec)
               
+              // Update status based on generation and deployment
+              let finalStatus: AppStatus = 'error'
+              if (result.success) {
+                if (result.deployment_status === 'deployed') {
+                  finalStatus = 'deployed'
+                } else if (result.deployment_status === 'deploying') {
+                  finalStatus = 'deploying'
+                } else {
+                  finalStatus = 'completed'
+                }
+              }
+              
               // Update progress
               const progressUpdate: ProgressUpdate = {
                 type: 'app_update',
                 app_name: spec.name,
-                status: result.success ? 'completed' : 'error',
-                progress: 100
+                status: finalStatus,
+                progress: 100,
+                deployment_url: result.deployment_url
               }
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressUpdate)}\n\n`))
               

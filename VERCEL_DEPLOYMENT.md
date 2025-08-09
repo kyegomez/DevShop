@@ -8,6 +8,8 @@
 - ✅ 5-minute timeout for app generation API
 - ✅ TypeScript and ESLint configuration
 - ✅ Node.js 18+ requirement specified
+- ✅ **Automatic Vercel deployment** for generated apps
+- ✅ **Show App button** with live deployment URLs
 
 ### 2. **Generated Apps**
 - ✅ **Next.js 14** framework for all React apps
@@ -24,6 +26,9 @@
 - ✅ Generates `vercel.json` for each app
 - ✅ Creates TypeScript, Tailwind, and PostCSS configs
 - ✅ Includes `.gitignore` and deployment-ready files
+- ✅ **Automatic deployment** to Vercel after generation
+- ✅ **Real-time deployment status** updates
+- ✅ **Live app URLs** returned to frontend
 
 ## 🎯 Deployment Options
 
@@ -139,6 +144,43 @@ All generated apps are:
 - ✅ **Modern stack** - Latest dependencies
 - ✅ **Professional** - Production-ready code
 - ✅ **Responsive** - Mobile-first design
+
+---
+
+## 🚀 **NEW: Automatic Deployment Feature**
+
+DevShop now **automatically deploys** generated React apps to Vercel!
+
+### How It Works:
+
+1. **Generate Apps** - Upload CSV, apps are created
+2. **Auto-Deploy** - React apps automatically deploy to Vercel
+3. **Show App Button** - Click to view live deployed app
+4. **Real-time Status** - Watch deployment progress in real-time
+
+### Deployment States:
+
+- 🟡 **Pending** - App created, waiting for deployment
+- 🔵 **Deploying** - Currently deploying to Vercel
+- 🟢 **Deployed** - Live on Vercel with "Show App" button
+- 🔴 **Failed** - Deployment error occurred
+
+### Environment Setup:
+
+Create `.env.local` with your Vercel credentials:
+```env
+VERCEL_TOKEN=your_vercel_token_here
+VERCEL_ORG_ID=your_org_id_here
+ENABLE_AUTO_DEPLOYMENT=true
+```
+
+### Features:
+
+- ⚡ **Instant deployment** after app generation
+- 🔗 **Live URLs** automatically generated
+- 📊 **Real-time status** updates via streaming
+- 🎯 **One-click access** to deployed apps
+- 🔄 **Automatic retries** for failed deployments
 
 ---
 

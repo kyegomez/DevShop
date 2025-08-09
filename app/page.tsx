@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, Play, Download, FileText, Users, Zap } from 'lucide-react'
+import { Upload, Play, Download, FileText, Users, Zap, ExternalLink, Rocket } from 'lucide-react'
 
 interface AppSpec {
   name: string
   description: string
-  status: 'pending' | 'running' | 'completed' | 'error'
+  status: 'pending' | 'running' | 'completed' | 'error' | 'deploying' | 'deployed'
   progress?: number
+  deploymentUrl?: string
 }
 
 export default function Home() {
@@ -83,7 +84,12 @@ export default function Home() {
                 setApps(prev => 
                   prev.map(app => 
                     app.name === data.app_name 
-                      ? { ...app, status: data.status, progress: data.progress }
+                      ? { 
+                          ...app, 
+                          status: data.status, 
+                          progress: data.progress,
+                          deploymentUrl: data.deployment_url || app.deploymentUrl
+                        }
                       : app
                   )
                 )
@@ -199,9 +205,27 @@ export default function Home() {
                       ></div>
                     </div>
                   )}
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium border status-${app.status}`}>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                    app.status === 'deployed' ? 'bg-green-100 text-green-800 border-green-200' :
+                    app.status === 'deploying' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                    app.status === 'completed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                    app.status === 'running' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                    app.status === 'error' ? 'bg-red-100 text-red-800 border-red-200' :
+                    'bg-gray-100 text-gray-800 border-gray-200'
+                  }`}>
+                    {app.status === 'deploying' && <Rocket className="w-3 h-3 inline mr-1" />}
+                    {app.status === 'deployed' && <ExternalLink className="w-3 h-3 inline mr-1" />}
                     {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
                   </span>
+                  {app.status === 'deployed' && app.deploymentUrl && (
+                    <button
+                      onClick={() => window.open(app.deploymentUrl, '_blank')}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      <span>Show App</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

@@ -17,6 +17,9 @@ export interface GenerationResult {
   files_created?: string[]
   error?: string
   generation_time: string
+  deployment_url?: string
+  deployment_status?: 'pending' | 'deploying' | 'deployed' | 'failed'
+  github_url?: string
 }
 
 export interface GenerationSummary {
@@ -35,4 +38,4 @@ export interface GenerationSummary {
   }
 }
 
-export type AppStatus = 'pending' | 'running' | 'completed' | 'error'
+export type AppStatus = 'pending' | 'running' | 'completed' | 'error' | 'deploying' | 'deployed'
