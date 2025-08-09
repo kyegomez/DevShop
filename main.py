@@ -17,6 +17,7 @@ import multiprocessing
 import threading
 import os
 from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
+from ui_dashboard import UIManager
 
 
 def get_optimal_worker_count() -> int:
@@ -176,17 +177,20 @@ class ClaudeAppGenerator:
         output_directory: str = "artifacts",
         retries: int = 3,
         retry_delay: float = 2.0,
+        ui_manager: Optional[UIManager] = None,
     ):
         """
         Initialize the app generator.
 
         Args:
             output_directory: Directory where generated apps will be stored
+            ui_manager: Optional UI manager for real-time updates
         """
         self.retries = retries
         self.retry_delay = retry_delay
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
+        self.ui_manager = ui_manager
 
     def _create_system_prompt(self, spec: AppSpecification) -> str:
         """
@@ -341,6 +345,12 @@ Start by creating the project structure, then implement the core functionality s
         """
         max_retries = self.retries
 
+        # Update UI that generation is starting
+        if self.ui_manager:
+            self.ui_manager.update_app_status(
+                spec.name, "running", 0.0, "Initializing Claude SDK..."
+            )
+
         for attempt in range(max_retries):
             try:
                 system_prompt = self._create_system_prompt(spec)
@@ -354,6 +364,11 @@ Start by creating the project structure, then implement the core functionality s
                     f"Starting generation for app: {spec.name} (attempt {attempt + 1}/{max_retries})"
                 )
 
+                if self.ui_manager:
+                    self.ui_manager.update_app_status(
+                        spec.name, "running", 10.0, f"Starting generation (attempt {attempt + 1})"
+                    )
+
                 async with ClaudeSDKClient(
                     options=ClaudeCodeOptions(
                         system_prompt=system_prompt,
@@ -363,26 +378,67 @@ Start by creating the project structure, then implement the core functionality s
                     )
                 ) as client:
 
+                    if self.ui_manager:
+                        self.ui_manager.update_app_status(
+                            spec.name, "running", 20.0, "Connected to Claude, sending prompt..."
+                        )
+
                     # Generate the application with detailed progress tracking
                     await client.query(generation_prompt)
 
                     response_text = []
                     message_count = 0
+                    progress_increment = 60.0 / 20  # 60% for message processing, divided by max_turns
+
+                    if self.ui_manager:
+                        self.ui_manager.update_app_status(
+                            spec.name, "running", 30.0, "Processing Claude responses..."
+                        )
 
                     async for message in client.receive_response():
                         message_count += 1
+                        current_progress = min(30.0 + (message_count * progress_increment), 90.0)
+                        
                         if hasattr(message, "content"):
                             for block in message.content:
                                 if hasattr(block, "text"):
-                                    response_text.append(block.text)
+                                    text_content = block.text
+                                    response_text.append(text_content)
+                                    
+                                    # Send Claude message to UI (truncated for display)
+                                    if self.ui_manager:
+                                        self.ui_manager.add_claude_message(spec.name, text_content)
+                                        self.ui_manager.update_app_status(
+                                            spec.name, "running", current_progress, 
+                                            f"Processing message {message_count}/20"
+                                        )
+                                        
                         elif type(message).__name__ == "ResultMessage":
                             logger.info(f"App {spec.name}: Received result message")
-                            response_text.append(str(message.result))
+                            result_text = str(message.result)
+                            response_text.append(result_text)
+                            
+                            if self.ui_manager:
+                                self.ui_manager.add_claude_message(spec.name, f"Result: {result_text}")
+                                self.ui_manager.log_app_activity(spec.name, "Received result message from Claude")
+
+                    if self.ui_manager:
+                        self.ui_manager.update_app_status(
+                            spec.name, "running", 95.0, "Validating generated files..."
+                        )
 
                     # Validate that files were actually created
                     created_files = list(app_dir.glob("**/*"))
                     if not created_files:
                         raise ValueError("No files were generated by Claude")
+
+                    # Update UI with files created
+                    if self.ui_manager:
+                        file_names = [f.name for f in created_files if f.is_file()]
+                        self.ui_manager.add_files_created(spec.name, file_names)
+                        self.ui_manager.update_app_status(
+                            spec.name, "completed", 100.0, f"Generated {len(created_files)} files successfully"
+                        )
 
                     logger.info(
                         f"Successfully generated app: {spec.name} with {len(created_files)} files"
@@ -407,6 +463,35 @@ Start by creating the project structure, then implement the core functionality s
                 logger.warning(
                     f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}\nTraceback:\n{tb_str}"
                 )
+                
+                if self.ui_manager:
+                    self.ui_manager.update_app_status(
+                        spec.name, "error" if attempt == max_retries - 1 else "running", 
+                        0.0, f"Attempt {attempt + 1} failed", error_msg
+                    )
+                    
+                # If not the last attempt, add retry delay
+                if attempt < max_retries - 1:
+                    if self.ui_manager:
+                        self.ui_manager.update_app_status(
+                            spec.name, "running", 0.0, 
+                            f"Retrying in {self.retry_delay}s... (attempt {attempt + 2}/{max_retries})"
+                        )
+                    await asyncio.sleep(self.retry_delay)
+                    
+        # If we get here, all retries failed
+        if self.ui_manager:
+            self.ui_manager.update_app_status(
+                spec.name, "error", 0.0, "All retry attempts failed", 
+                f"Failed after {max_retries} attempts"
+            )
+            
+        return {
+            "success": False,
+            "app_name": spec.name,
+            "error": f"Failed after {max_retries} attempts",
+            "generation_time": datetime.now().isoformat(),
+        }
 
     def generate_app_sync(self, spec: AppSpecification) -> Dict[str, Any]:
         """
@@ -435,6 +520,8 @@ class MultiAppOrchestrator:
         output_directory: str = "artifacts",
         max_concurrent: Optional[int] = None,
         show_progress: bool = True,
+        enable_ui: bool = True,
+        show_claude_output: bool = True,
     ):
         """
         Initialize the orchestrator.
@@ -445,6 +532,8 @@ class MultiAppOrchestrator:
             max_concurrent: Maximum number of concurrent app generations.
                           If None, uses optimal count based on CPU cores
             show_progress: Whether to show real-time progress dashboard
+            enable_ui: Whether to enable the Rich console UI
+            show_claude_output: Whether to show Claude agent outputs in UI
         """
         self.csv_file_path = csv_file_path
         self.output_directory = output_directory
@@ -453,16 +542,23 @@ class MultiAppOrchestrator:
             max_concurrent if max_concurrent is not None else get_optimal_worker_count()
         )
         self.show_progress = show_progress
-        # Track app generation status for progress monitoring
+        self.enable_ui = enable_ui
+        
+        # Initialize UI Manager
+        self.ui_manager = UIManager(show_claude_output=show_claude_output) if enable_ui else None
+        
+        # Track app generation status for progress monitoring (legacy)
         self.app_statuses = {}
         self.status_lock = threading.Lock()
 
         self.ingester = CSVAppIngester(csv_file_path)
-        self.generator = ClaudeAppGenerator(output_directory)
+        self.generator = ClaudeAppGenerator(output_directory, ui_manager=self.ui_manager)
 
         logger.info(
             f"Initialized with {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
+        if enable_ui:
+            logger.info("Rich console UI enabled for real-time monitoring")
 
     def update_app_status(self, app_name: str, status: str, output: str = ""):
         """
@@ -616,6 +712,7 @@ class MultiAppOrchestrator:
             f"💻 Using {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
 
+        ui_started = False
         try:
             # Read app specifications
             specifications = self.ingester.read_app_specifications()
@@ -627,12 +724,20 @@ class MultiAppOrchestrator:
                 f"📊 Found {len(specifications)} app specifications to generate"
             )
 
-            # Initialize status tracking for all apps
+            # Initialize UI if enabled
+            if self.ui_manager:
+                app_names = [spec.name for spec in specifications]
+                self.ui_manager.initialize(app_names)
+                self.ui_manager.start()
+                ui_started = True
+                logger.info("🎨 Rich console UI started")
+
+            # Initialize status tracking for all apps (legacy support)
             for spec in specifications:
                 self.update_app_status(spec.name, "pending", "Queued for generation")
 
-            # Show initial dashboard
-            if self.show_progress:
+            # Show initial dashboard (legacy)
+            if self.show_progress and not self.ui_manager:
                 self.display_progress_dashboard(
                     "🚀 Initializing Concurrent App Generation"
                 )
@@ -677,8 +782,14 @@ class MultiAppOrchestrator:
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
 
-            # Display final results
-            if self.show_progress:
+            # Stop UI and show final results
+            if ui_started and self.ui_manager:
+                # Give a moment for final updates to be displayed
+                import time
+                time.sleep(1)
+                self.ui_manager.stop()
+            elif self.show_progress:
+                # Display final results (legacy)
                 self.display_progress_dashboard("🎉 Final Generation Results")
 
             summary = {
@@ -707,5 +818,75 @@ class MultiAppOrchestrator:
             return summary
 
         except Exception as e:
+            # Ensure UI is stopped even on error
+            if ui_started and self.ui_manager:
+                self.ui_manager.stop()
             logger.error(f"❌ Error in concurrent multi-app generation: {e}")
             raise
+
+
+def run_multi_app_generation(
+    csv_file_path: str,
+    output_directory: str = "artifacts",
+    max_concurrent: Optional[int] = None,
+    enable_ui: bool = True,
+    show_claude_output: bool = True,
+) -> Dict[str, Any]:
+    """
+    Convenience function to run multi-app generation with Rich UI.
+    
+    Args:
+        csv_file_path: Path to CSV file with app specifications
+        output_directory: Directory for generated apps
+        max_concurrent: Maximum concurrent workers (auto-calculated if None)
+        enable_ui: Whether to enable the Rich console UI
+        show_claude_output: Whether to show Claude agent outputs in UI
+        
+    Returns:
+        Dict containing generation results and statistics
+        
+    Example:
+        ```python
+        # Run with Rich UI enabled
+        results = run_multi_app_generation("sample.csv", enable_ui=True)
+        
+        # Run without UI (legacy mode)
+        results = run_multi_app_generation("sample.csv", enable_ui=False)
+        ```
+    """
+    orchestrator = MultiAppOrchestrator(
+        csv_file_path=csv_file_path,
+        output_directory=output_directory,
+        max_concurrent=max_concurrent,
+        enable_ui=enable_ui,
+        show_claude_output=show_claude_output,
+    )
+    
+    return orchestrator.run()
+
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <csv_file_path> [output_directory]")
+        print("Example: python main.py sample.csv artifacts")
+        sys.exit(1)
+    
+    csv_path = sys.argv[1]
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else "artifacts"
+    
+    # Run with Rich UI enabled by default
+    try:
+        results = run_multi_app_generation(
+            csv_file_path=csv_path,
+            output_directory=output_dir,
+            enable_ui=True,
+            show_claude_output=True,
+        )
+        print(f"\n🎉 Generation completed! Results: {results}")
+    except KeyboardInterrupt:
+        print("\n⚠️ Generation interrupted by user")
+    except Exception as e:
+        print(f"\n❌ Generation failed: {e}")
+        sys.exit(1)

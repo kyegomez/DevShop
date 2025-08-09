@@ -30,6 +30,7 @@ def main():
             output_directory=output_dir,
             max_concurrent=None,  # Auto-detect optimal worker count
             show_progress=False,  # Disable progress dashboard
+            enable_ui=True,
         )
 
         # Generate all apps concurrently
