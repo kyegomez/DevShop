@@ -171,13 +171,20 @@ class ClaudeAppGenerator:
     Generates applications using Claude Code SDK based on specifications.
     """
 
-    def __init__(self, output_directory: str = "artifacts"):
+    def __init__(
+        self,
+        output_directory: str = "artifacts",
+        retries: int = 3,
+        retry_delay: float = 2.0,
+    ):
         """
         Initialize the app generator.
 
         Args:
             output_directory: Directory where generated apps will be stored
         """
+        self.retries = retries
+        self.retry_delay = retry_delay
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
 
@@ -332,8 +339,7 @@ Start by creating the project structure, then implement the core functionality s
         Returns:
             Dict containing generation results
         """
-        max_retries = 3
-        retry_delay = 2.0
+        max_retries = self.retries
 
         for attempt in range(max_retries):
             try:
@@ -394,25 +400,13 @@ Start by creating the project structure, then implement the core functionality s
                     }
 
             except Exception as e:
+                import traceback
+
                 error_msg = str(e)
+                tb_str = traceback.format_exc()
                 logger.warning(
-                    f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}"
+                    f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}\nTraceback:\n{tb_str}"
                 )
-
-                if attempt == max_retries - 1:  # Last attempt
-                    logger.error(
-                        f"All {max_retries} attempts failed for app {spec.name}: {error_msg}"
-                    )
-                    return {
-                        "success": False,
-                        "app_name": spec.name,
-                        "error": error_msg,
-                        "generation_time": datetime.now().isoformat(),
-                        "attempts": max_retries,
-                    }
-
-                # Wait before retry
-                await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
 
     def generate_app_sync(self, spec: AppSpecification) -> Dict[str, Any]:
         """
@@ -604,7 +598,7 @@ class MultiAppOrchestrator:
                     "generation_time": datetime.now().isoformat(),
                 }
 
-    def generate_all_apps(self) -> Dict[str, Any]:
+    def run(self) -> Dict[str, Any]:
         """
         Generate all applications from the CSV file using true concurrent execution.
 

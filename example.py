@@ -33,7 +33,7 @@ def main():
         )
 
         # Generate all apps concurrently
-        results = orchestrator.generate_all_apps()
+        results = orchestrator.run()
 
         return results
 
