@@ -298,33 +298,33 @@ export default function Home() {
                     {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
                   </span>
                   {app.status === 'deployed' && app.deploymentUrl && (
-                    <>
-                      {app.deploymentUrl.includes('devshop.local') ? (
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => {
-                              const appName = app.name.toLowerCase().replace(/[^a-z0-9]/g, '_')
-                              const localPath = `public/generated_apps/${appName}`
-                              alert(`🎯 Demo Mode!\n\nThis app was built locally at:\n${localPath}\n\nTo deploy to real Vercel:\n1. Add VERCEL_TOKEN to .env.local\n2. Run generation again\n\nClick OK to view local files`)
-                              // In a real app, you might open the local directory or show the built files
-                            }}
-                            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                          >
-                            <FileText className="h-4 w-4" />
-                            <span>View Files</span>
-                          </button>
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Demo Mode</span>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => window.open(app.deploymentUrl, '_blank')}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          <span>Show App</span>
-                        </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => {
+                          if (app.deploymentUrl?.includes('devshop.local')) {
+                            const appName = app.name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+                            const localPath = `public/generated_apps/${appName}`
+                            alert(`🎯 Demo Mode!\n\nThis app was built locally at:\n${localPath}\n\nTo deploy to real Vercel:\n1. Add VERCEL_TOKEN to .env.local\n2. Run generation again`)
+                          } else {
+                            window.open(app.deploymentUrl, '_blank')
+                          }
+                        }}
+                        className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors duration-200 ${
+                          app.deploymentUrl?.includes('devshop.local') 
+                            ? 'bg-blue-600 hover:bg-blue-700' 
+                            : 'bg-green-600 hover:bg-green-700'
+                        }`}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        <span>View App</span>
+                      </button>
+                      {app.deploymentUrl?.includes('devshop.local') && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Demo Mode</span>
                       )}
-                    </>
+                      {!app.deploymentUrl?.includes('devshop.local') && (
+                        <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">Live on Vercel</span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

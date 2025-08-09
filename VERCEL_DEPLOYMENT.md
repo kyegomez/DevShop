@@ -170,17 +170,24 @@ DevShop now **automatically deploys** generated React apps to Vercel!
 Create `.env.local` with your Vercel credentials:
 ```env
 VERCEL_TOKEN=your_vercel_token_here
-VERCEL_ORG_ID=your_org_id_here
 ENABLE_AUTO_DEPLOYMENT=true
 ```
 
+**Get Your Vercel Token:**
+1. Go to [https://vercel.com/account/tokens](https://vercel.com/account/tokens)
+2. Click "Create Token"
+3. Copy the token to your `.env.local` file
+4. Restart the dev server: `npm run dev`
+
 ### Features:
 
-- ⚡ **Instant deployment** after app generation
-- 🔗 **Live URLs** automatically generated
+- ⚡ **Real Vercel deployment** using Vercel API
+- 🔗 **Live .vercel.app URLs** automatically generated
 - 📊 **Real-time status** updates via streaming
 - 🎯 **One-click access** to deployed apps
-- 🔄 **Automatic retries** for failed deployments
+- 🔄 **Automatic fallback** to demo mode if deployment fails
+- 🏗️ **Project creation** - each app gets its own Vercel project
+- ⏳ **Deployment monitoring** - waits for deployment to be ready
 
 ---
 
