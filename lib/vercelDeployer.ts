@@ -194,16 +194,17 @@ export class VercelDeployer {
     }
   }
 
-  private async getFilesWithContent(appDir: string): Promise<any> {
-    const files: any = {}
+  private async getFilesWithContent(appDir: string): Promise<any[]> {
+    const files: any[] = []
     
     const addFile = (filePath: string, relativePath: string) => {
       if (!fs.existsSync(filePath)) return
       
       const content = fs.readFileSync(filePath, 'utf8')
-      files[relativePath] = {
-        file: content
-      }
+      files.push({
+        file: relativePath,
+        data: content
+      })
     }
 
     // Add essential files for Next.js app
@@ -241,7 +242,7 @@ export class VercelDeployer {
     // Add app directory
     addDirectory(path.join(appDir, 'app'), 'app')
 
-    console.log(`📁 Prepared ${Object.keys(files).length} files for deployment`)
+    console.log(`📁 Prepared ${files.length} files for deployment`)
     return files
   }
 
