@@ -22,24 +22,52 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Parse form data
-        const formData = await request.formData()
-        const csvFile = formData.get('csvFile') as File
+        let specifications: AppSpecification[] = []
         
-        if (!csvFile) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'error',
-            message: 'No CSV file provided'
-          })}\n\n`))
-          controller.close()
-          return
-        }
+        // Check if this is a JSON request (ideas) or form data (CSV)
+        const contentType = request.headers.get('content-type')
+        
+        if (contentType?.includes('application/json')) {
+          // Handle ideas input
+          const body = await request.json()
+          const ideas = body.ideas || []
+          
+          if (!ideas || ideas.length === 0) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              message: 'No ideas provided'
+            })}\n\n`))
+            controller.close()
+            return
+          }
+          
+          // Convert ideas to app specifications
+          specifications = ideas.map((idea: string) => ({
+            name: idea.trim(),
+            description: `AI-generated app based on: ${idea}`,
+            requirements: `Create a modern, user-friendly application for: ${idea}`,
+            tech_stack: 'Python/React'
+          }))
+        } else {
+          // Handle CSV file upload
+          const formData = await request.formData()
+          const csvFile = formData.get('csvFile') as File
+          
+          if (!csvFile) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              message: 'No CSV file provided'
+            })}\n\n`))
+            controller.close()
+            return
+          }
 
-        // Read CSV content
-        const csvContent = await csvFile.text()
-        
-        // Parse CSV into app specifications
-        const specifications = CSVParser.parseCSVContent(csvContent)
+          // Read CSV content
+          const csvContent = await csvFile.text()
+          
+          // Parse CSV into app specifications
+          specifications = CSVParser.parseCSVContent(csvContent)
+        }
         
         if (specifications.length === 0) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({

@@ -13,12 +13,97 @@ interface AppSpec {
 
 export default function Home() {
   const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [ideasInput, setIdeasInput] = useState('')
   const [apps, setApps] = useState<AppSpec[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [showLogs, setShowLogs] = useState(false)
   const [logs, setLogs] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleIdeasSubmit = async () => {
+    if (!ideasInput.trim()) return
+
+    // Split ideas by newlines or commas
+    const ideas = ideasInput
+      .split(/[\n,]+/)
+      .map(idea => idea.trim())
+      .filter(idea => idea.length > 0)
+
+    if (ideas.length === 0) return
+
+    // Create app specs from ideas
+    const specs: AppSpec[] = ideas.map((idea, index) => ({
+      name: idea,
+      description: `AI-generated app based on: ${idea}`,
+      status: 'pending'
+    }))
+
+    setApps(specs)
+    setIsGenerating(true)
+
+    try {
+      // Start generation for each idea
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ideas: ideas,
+          mode: 'ideas'
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Generation failed')
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response stream')
+
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'app_update') {
+                setApps(prev => 
+                  prev.map(app => 
+                    app.name === data.app_name 
+                      ? { 
+                          ...app, 
+                          status: data.status, 
+                          progress: data.progress,
+                          deploymentUrl: data.deployment_url || app.deploymentUrl
+                        }
+                      : app
+                  )
+                )
+              } else if (data.type === 'final_results') {
+                setResults(data.results)
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Generation error:', error)
+      setApps(prev => prev.map(app => ({ ...app, status: 'error' as const })))
+    } finally {
+      setIsGenerating(false)
+      setIdeasInput('') // Clear input after submission
+    }
+  }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -128,13 +213,14 @@ export default function Home() {
     <div className="space-y-8">
       {/* Header */}
       <div className="text-center relative">
-        
-        <h2 className="text-4xl font-bold text-foreground mb-4">
-          Build Millions of Apps at Once
-        </h2>
-        <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-          A multi-agent structure that can build multiple applications in parallel using AI-powered code generation
-        </p>
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-medium text-slate-12 whitespace-pre-wrap text-pretty">
+            Build Millions of Apps at Once
+          </h1>
+          <div className="text-slate-10 [&>p]:tracking-tight text-pretty">
+            <p>A multi-agent structure that can build multiple applications in parallel using AI-powered code generation</p>
+          </div>
+        </div>
         
         {/* Logs Button */}
         <button
@@ -204,6 +290,42 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Ideas Input Form */}
+      <div className="bg-card rounded-lg p-6 shadow-sm border border-border">
+        <h3 className="text-lg font-semibold mb-4 text-card-foreground">Generate Apps from Ideas</h3>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="ideas" className="text-sm font-medium text-foreground">
+              Enter your app ideas:
+            </label>
+            <textarea
+              id="ideas"
+              placeholder="Enter your app ideas, one per line or separated by commas. For example:&#10;Task Manager Pro&#10;Recipe Finder&#10;Budget Tracker&#10;Plant Care App"
+              value={ideasInput}
+              onChange={(e) => setIdeasInput(e.target.value)}
+              className="w-full h-32 p-3 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              onClick={handleIdeasSubmit}
+              disabled={!ideasInput.trim() || isGenerating}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGenerating ? 'Generating...' : 'Generate Apps from Ideas'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">Or</span>
+        </div>
+      </div>
 
       {/* File Upload */}
       <div className="bg-card rounded-lg p-6 shadow-sm border border-border">

@@ -3,14 +3,15 @@ import { VercelDeployer } from './vercelDeployer'
 import { Logger } from './logger'
 import fs from 'fs'
 import path from 'path'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateObject } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { z } from 'zod'
 
 export class AppGenerator {
   private outputDirectory: string
   private deployer: VercelDeployer
   private enableDeployment: boolean
   private logger: Logger
-  private anthropic: Anthropic
 
   constructor(outputDirectory: string = 'generated_apps', enableDeployment: boolean = true) {
     this.outputDirectory = outputDirectory
@@ -18,14 +19,15 @@ export class AppGenerator {
     this.deployer = new VercelDeployer()
     this.logger = Logger.getInstance()
     
-    // Initialize Anthropic client
-    const anthropicKey = process.env.ANTHROPIC_TOKEN
+    // Ensure Anthropic API key available for AI SDK provider
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_TOKEN
     if (!anthropicKey) {
-      throw new Error('ANTHROPIC_TOKEN environment variable is required')
+      throw new Error('ANTHROPIC_API_KEY or ANTHROPIC_TOKEN environment variable is required')
     }
-    this.anthropic = new Anthropic({
-      apiKey: anthropicKey,
-    })
+    // Normalize to ANTHROPIC_API_KEY expected by @ai-sdk/anthropic
+    if (!process.env.ANTHROPIC_API_KEY) {
+      process.env.ANTHROPIC_API_KEY = anthropicKey
+    }
     
     // Ensure output directory exists
     if (!fs.existsSync(this.outputDirectory)) {
@@ -117,13 +119,110 @@ NEXT.JS 14 APP REQUIREMENTS:
 **REQUIRED FILE STRUCTURE:**
 - app/page.tsx (compelling landing page)
 - app/dashboard/page.tsx (main application interface)
-- app/about/page.tsx (value proposition & how it works)
 - app/layout.tsx (root layout with navigation)
 - app/globals.css (comprehensive design system)
-- app/components/ (reusable UI components)
+- components/dashboard/ (dashboard-specific components at ROOT level)
+- components/ui/ (reusable UI components at ROOT level)
+- components/landing/ (landing page components at ROOT level)
 - package.json (optimized dependencies)
 - next.config.js, tailwind.config.js, tsconfig.json
 - README.md (comprehensive setup & value proposition)
+
+**CRITICAL: Import Requirements:**
+- Use @/ path aliases for ALL imports (much cleaner than relative paths)
+- Ensure all imported components are actually generated
+- Include ALL components referenced in any file
+- Generate complete component files, not just interfaces
+
+**PATH ALIAS EXAMPLES:**
+✅ app/page.tsx imports "@/components/landing/Hero"
+✅ app/dashboard/page.tsx imports "@/components/dashboard/DashboardHeader" 
+✅ app/components/landing/Hero.tsx imports "@/components/ui/Button"
+✅ app/layout.tsx imports "@/app/globals.css"
+❌ NEVER use relative paths like "../../components/" - ALWAYS use "@/components/"
+
+**REACT SERVER/CLIENT COMPONENTS:**
+- Add "use client" directive to ANY component that uses:
+  - useState, useEffect, useRef, or other React hooks
+  - Event handlers (onClick, onChange, etc.)
+  - Browser APIs (localStorage, window, etc.)
+- Server components (no "use client") can only use:
+  - Props, async/await, server-side APIs
+  - No hooks, no event handlers, no browser APIs
+
+**CLIENT COMPONENT EXAMPLES:**
+- Add "use client" at the top of any component using hooks
+- Example: TaskBoard component with useState needs "use client"
+- Example: Button component with onClick needs "use client"
+
+**SYNTAX REQUIREMENTS:**
+- NEVER break strings across lines without proper concatenation
+- Use template literals for multi-line strings: \`string content\`
+- Escape quotes properly in strings: "can't" should be "can\\'t"
+
+**PRE-GENERATION PLANNING:**
+Before writing any code, create a complete list of all components you will need:
+1. List every component that will be imported
+2. Ensure each component has a clear purpose and functionality
+3. Generate ALL components before generating files that import them
+4. Test your import paths mentally before writing them
+
+**MANDATORY COMPONENT GENERATION:**
+If you reference ANY component in an import statement, you MUST generate that component file. For example:
+- If dashboard/page.tsx imports "../components/dashboard/DashboardHeader" → Generate DashboardHeader.tsx
+- If dashboard/page.tsx imports "../components/dashboard/TaskBoard" → Generate TaskBoard.tsx
+- If dashboard/page.tsx imports "../components/ui/LoadingSkeleton" → Generate LoadingSkeleton.tsx
+
+**CRITICAL RULE: BEFORE GENERATING ANY FILE WITH IMPORTS, FIRST LIST ALL COMPONENTS YOU WILL NEED TO GENERATE.**
+**Example: If dashboard/page.tsx needs DashboardHeader, TaskBoard, and ProjectStats, generate ALL THREE components first.**
+**NEVER leave an import statement without a corresponding component file.**
+
+**WHAT NOT TO DO (THIS WILL CAUSE BUILD FAILURES):**
+❌ DO NOT use relative imports: "../../components/dashboard/Header" 
+❌ DO NOT break strings: 'can't do this' (missing escape)
+❌ DO NOT use hooks without "use client"
+❌ DO NOT generate imports for non-existent components
+
+**WHAT TO DO:**
+✅ ALWAYS use @/ imports: "@/components/dashboard/Header"
+✅ Add "use client" to interactive components
+✅ Escape quotes: "can\\'t do this" or use template literals
+✅ Generate ALL components before importing them
+
+**CRITICAL IMPORT FIXES:**
+Replace these common mistakes:
+- "../../components/" → "@/components/"
+- "../components/" → "@/components/"  
+- "./components/" → "@/components/"
+- ALL imports must use @/ aliases!
+
+**COMPONENT STRUCTURE:**
+- components/dashboard/ (dashboard-specific components at ROOT level)
+- components/ui/ (reusable UI components at ROOT level)  
+- components/landing/ (landing page components at ROOT level)
+- lib/ (utilities, hooks, types at ROOT level)
+- app/ (Next.js pages and layouts)
+
+**NO MISSING IMPORTS:**
+Every import statement must have a corresponding generated file. This is critical for successful builds.
+
+**FINAL VALIDATION CHECK:**
+Before outputting your JSON, verify that:
+1. Every import statement in every file has a corresponding component file
+2. All component files are complete and functional (not just stubs)
+3. The file structure matches exactly what you're importing
+4. No circular dependencies exist
+
+**GENERATION ORDER:**
+1. Generate ALL component files first at ROOT level (components/ui/, components/landing/, components/dashboard/)
+2. Generate utility files at ROOT level (lib/, types/)
+3. Generate page files that import the components (app/page.tsx, app/dashboard/page.tsx)
+4. Generate layout files last (app/layout.tsx)
+
+**CRITICAL: Components go at ROOT level, NOT inside app/ folder!**
+
+**IF YOU CANNOT GENERATE ALL REQUIRED COMPONENTS, DO NOT GENERATE THE FILE THAT IMPORTS THEM.**
+**PREFER SIMPLER COMPONENTS OVER MISSING IMPORTS.**
 
 **Landing Page Requirements:**
 - Hero section that immediately communicates value
@@ -187,13 +286,26 @@ PYTHON APPLICATION REQUIREMENTS:
 
 5. **Focus on User Success**: Every feature should have a clear purpose in helping ${spec.target_user} achieve ${spec.app_goal}.
 
-Respond with a JSON object containing the complete file structure:
-{
-  "files": {
-    "filename.ext": "file content here",
-    "folder/filename.ext": "file content here"
+  **CRITICAL OUTPUT FORMAT (JSON WITH BASE64 CONTENT):**
+
+  You MUST respond with ONLY a valid JSON object. All file content must be base64-encoded to prevent JSON escaping issues.
+
+  Required format:
+  {
+    "files": {
+      "path/to/file.ext": {
+        "encoding": "base64",
+        "content": "BASE64_ENCODED_CONTENT_HERE"
+      }
+    }
   }
-}
+
+  CRITICAL RULES:
+  - Every file's content MUST be base64-encoded before placing in JSON
+  - Use only double quotes for JSON strings
+  - No raw code content - everything must be base64 encoded
+  - No additional text, markdown, or commentary outside the JSON object
+  - Validate your JSON syntax before responding
 
 **Your mission**: Create an application that doesn't just solve "${spec.main_problem}" but creates a delightful, comprehensive solution that users would actually want to use and recommend to others.`
   }
@@ -201,38 +313,115 @@ Respond with a JSON object containing the complete file structure:
   private async generateWithClaude(spec: AppSpecification): Promise<{ files: Record<string, string> }> {
     this.logger.info(`Generating app with Claude API`, { appName: spec.name, techStack: spec.tech_stack })
     
+    // Add delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
     try {
       const systemPrompt = this.createSystemPrompt(spec)
       
-      const response = await this.anthropic.messages.create({
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 8000,
-        temperature: 0.8,
-        messages: [
-          {
-            role: 'user',
-            content: systemPrompt
-          }
-        ]
+      // Define structured schema for robust object generation
+      const FileValueSchema = z.union([
+        z.object({ encoding: z.literal('base64'), content: z.string() }),
+        z.object({ b64: z.string() }),
+        z.string()
+      ])
+
+      const ResponseSchema = z.object({
+        files: z.record(FileValueSchema)
       })
 
-      const content = response.content[0]
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response type from Claude')
+      this.logger.info(`Starting Claude generation with structured output`, { 
+        promptLength: systemPrompt.length,
+        modelId: 'claude-3-5-sonnet-20241022'
+      })
+
+      const { object } = await generateObject({
+        model: anthropic('claude-3-5-sonnet-20241022'),
+        temperature: 0.7, // Lower temperature for more consistent JSON output
+        schema: ResponseSchema,
+        prompt: systemPrompt,
+      })
+
+      this.logger.info(`Claude API response received`, { 
+        appName: spec.name, 
+        fileCount: Object.keys(object.files).length,
+        fileKeys: Object.keys(object.files).slice(0, 5) // Log first 5 file keys for debugging
+      })
+
+      // Decode base64 contents if present
+      const decodedFiles: Record<string, string> = {}
+      for (const [filePath, value] of Object.entries<any>(object.files)) {
+        try {
+          if (value && typeof value === 'object' && (value.encoding === 'base64' || value.b64)) {
+            const b64 = typeof value.b64 === 'string' ? value.b64 : String(value.content || '')
+            
+            if (!b64) {
+              this.logger.warn(`Empty base64 content for file`, { filePath })
+              decodedFiles[filePath] = ''
+              continue
+            }
+
+            try {
+              const decodedContent = Buffer.from(b64, 'base64').toString('utf8')
+              decodedFiles[filePath] = decodedContent
+              this.logger.info(`Successfully decoded base64 file`, { 
+                filePath, 
+                originalSize: b64.length, 
+                decodedSize: decodedContent.length 
+              })
+            } catch (b64Error) {
+              this.logger.error('Base64 decode failed', { 
+                filePath, 
+                b64Length: b64.length,
+                b64Preview: b64.substring(0, 50),
+                error: b64Error instanceof Error ? b64Error.message : 'Unknown base64 error'
+              })
+              decodedFiles[filePath] = ''
+            }
+          } else if (typeof value === 'string') {
+            // Accept raw string (model may return direct content)
+            this.logger.info(`Using raw string content for file`, { filePath, contentLength: value.length })
+            decodedFiles[filePath] = value
+          } else {
+            this.logger.warn('Unknown file value format; coercing to string', { 
+              filePath, 
+              type: typeof value,
+              value: JSON.stringify(value).substring(0, 100)
+            })
+            decodedFiles[filePath] = String(value ?? '')
+          }
+        } catch (fileError) {
+          this.logger.error('Error processing file', { 
+            filePath, 
+            error: fileError instanceof Error ? fileError.message : 'Unknown file processing error' 
+          })
+          decodedFiles[filePath] = ''
+        }
       }
 
-      // Extract JSON from Claude's response
-      const jsonMatch = content.text.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) {
-        throw new Error('Could not extract JSON from Claude response')
-      }
-
-      const result = JSON.parse(jsonMatch[0])
-      this.logger.info(`Claude generated ${Object.keys(result.files).length} files`, { appName: spec.name })
+      this.logger.info(`Claude generation completed successfully`, { 
+        appName: spec.name,
+        totalFiles: Object.keys(decodedFiles).length,
+        nonEmptyFiles: Object.entries(decodedFiles).filter(([_, content]) => content.length > 0).length
+      })
       
-      return result
+      return { files: decodedFiles }
     } catch (error) {
-      this.logger.error(`Claude API error for ${spec.name}`, { error: error instanceof Error ? error.message : 'Unknown error' })
+      // Enhanced error logging for better debugging
+      if (error instanceof Error) {
+        this.logger.error(`Claude API error for ${spec.name}`, { 
+          error: error.message,
+          stack: error.stack?.split('\n').slice(0, 5).join('\n'), // First 5 lines of stack trace
+          errorName: error.constructor.name
+        })
+        
+        // Check for specific JSON parsing errors
+        if (error.message.includes('JSON') || error.message.includes('parse')) {
+          this.logger.error(`JSON parsing issue detected - this suggests the Claude response contained unescaped quotes or invalid JSON syntax`)
+        }
+      } else {
+        this.logger.error(`Unknown Claude API error for ${spec.name}`, { error: String(error) })
+      }
       throw error
     }
   }
@@ -256,6 +445,9 @@ Respond with a JSON object containing the complete file structure:
       
       // Write all generated files to disk
       const files = await this.writeGeneratedFiles(appDir, claudeResult.files)
+      
+      // Validate all imports are satisfied
+      await this.validateImports(appDir, claudeResult.files)
       
       // Add Vercel-specific configuration files for React apps
       if (spec.tech_stack?.toLowerCase().includes('react')) {
@@ -643,6 +835,73 @@ pytest-cov>=4.0.0`
       this.logger.info(`Added vercel.json configuration`, { appDir })
     }
 
+    // Fix next.config.js - remove deprecated serverActions
+    const nextConfigPath = path.join(appDir, 'next.config.js')
+    if (fs.existsSync(nextConfigPath)) {
+      let nextConfig = fs.readFileSync(nextConfigPath, 'utf-8')
+      if (nextConfig.includes('serverActions')) {
+        nextConfig = nextConfig.replace(/experimental:\s*\{[^}]*serverActions[^}]*\}/g, 'experimental: {}')
+        nextConfig = nextConfig.replace(/,\s*experimental:\s*\{\s*\}/g, '')
+        fs.writeFileSync(nextConfigPath, nextConfig)
+        this.logger.info(`Fixed next.config.js - removed deprecated serverActions`, { appDir })
+      }
+    } else {
+      // Add a clean next.config.js
+      const nextConfig = `/** @type {import('next').NextConfig} */
+const nextConfig = {}
+
+module.exports = nextConfig`
+      fs.writeFileSync(nextConfigPath, nextConfig)
+      this.logger.info(`Added clean next.config.js`, { appDir })
+    }
+
+    // Ensure tsconfig.json has proper path mapping
+    const tsconfigPath = path.join(appDir, 'tsconfig.json')
+    if (!fs.existsSync(tsconfigPath)) {
+      const tsconfig = {
+        "compilerOptions": {
+          "target": "es5",
+          "lib": ["dom", "dom.iterable", "es6"],
+          "allowJs": true,
+          "skipLibCheck": true,
+          "strict": true,
+          "noEmit": true,
+          "esModuleInterop": true,
+          "module": "esnext",
+          "moduleResolution": "bundler",
+          "resolveJsonModule": true,
+          "isolatedModules": true,
+          "jsx": "preserve",
+          "incremental": true,
+          "plugins": [{"name": "next"}],
+          "baseUrl": ".",
+          "paths": {
+            "@/*": ["./*"]
+          }
+        },
+        "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        "exclude": ["node_modules"]
+      }
+      fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2))
+      this.logger.info(`Added tsconfig.json with path mapping`, { appDir })
+    } else {
+      // Update existing tsconfig.json to fix path mapping
+      try {
+        const existingTsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8'))
+        if (existingTsconfig.compilerOptions && existingTsconfig.compilerOptions.paths) {
+          if (existingTsconfig.compilerOptions.paths['@/*'] && 
+              JSON.stringify(existingTsconfig.compilerOptions.paths['@/*']) !== JSON.stringify(['./*'])) {
+            existingTsconfig.compilerOptions.paths['@/*'] = ['./*']
+            existingTsconfig.compilerOptions.baseUrl = '.'
+            fs.writeFileSync(tsconfigPath, JSON.stringify(existingTsconfig, null, 2))
+            this.logger.info(`Updated tsconfig.json path mapping to use root level`, { appDir })
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Failed to update tsconfig.json`, { appDir, error: error instanceof Error ? error.message : 'Unknown error' })
+      }
+    }
+
     // Add PostCSS config if not present
     const postcssConfigPath = path.join(appDir, 'postcss.config.js')
     if (!fs.existsSync(postcssConfigPath)) {
@@ -655,6 +914,82 @@ pytest-cov>=4.0.0`
       fs.writeFileSync(postcssConfigPath, postcssConfig)
       this.logger.info(`Added postcss.config.js`, { appDir })
     }
+  }
+
+  private async validateImports(appDir: string, files: Record<string, string>): Promise<void> {
+    // Extract all import statements from TypeScript/JavaScript files
+    const importRegex = /import\s+(?:.*?\s+from\s+)?['"`]([^'"`]+)['"`]/g
+    const missingImports: string[] = []
+    
+    this.logger.info(`🔍 Starting import validation for ${appDir}`, {
+      totalFiles: Object.keys(files).length,
+      fileTypes: Object.keys(files).map(f => path.extname(f)).filter((v, i, a) => a.indexOf(v) === i)
+    })
+    
+    for (const [filePath, content] of Object.entries(files)) {
+      if (filePath.endsWith('.tsx') || filePath.endsWith('.ts')) {
+        let match
+        while ((match = importRegex.exec(content)) !== null) {
+          const importPath = match[1]
+          
+          // Skip external packages and validate @/ and relative imports
+          if (importPath.startsWith('@/') || (importPath.startsWith('.') && !importPath.startsWith('@/'))) {
+            let normalizedImportPath: string
+            
+            if (importPath.startsWith('@/')) {
+              // @/ imports are absolute from project root
+              normalizedImportPath = importPath.replace('@/', '')
+            } else {
+              // Relative imports (./ or ../) need to be resolved from importing file
+              const importingDir = path.dirname(filePath)
+              const expectedImportPath = path.join(importingDir, importPath)
+              normalizedImportPath = path.normalize(expectedImportPath).replace(/\\/g, '/')
+            }
+            
+            // Check if the imported file exists with various extensions
+            const importFileWithExt = [
+              normalizedImportPath + '.tsx',
+              normalizedImportPath + '.ts',
+              normalizedImportPath + '/index.tsx',
+              normalizedImportPath + '/index.ts'
+            ]
+            
+            // For CSS imports, also check the exact path without extension
+            if (importPath.endsWith('.css')) {
+              importFileWithExt.unshift(normalizedImportPath)
+            }
+            
+            // Check if any of these files exist in our files object
+            const exists = importFileWithExt.some(ext => {
+              const fileExists = files[ext] !== undefined
+              
+              // Debug logging
+              if (!fileExists) {
+                this.logger.info(`❌ Missing import: ${filePath} -> ${importPath}`, {
+                  expectedPath: ext,
+                  normalizedImportPath,
+                  importType: importPath.startsWith('@/') ? 'alias' : 'relative',
+                  availableFiles: Object.keys(files).slice(0, 10) // Show first 10 files for debugging
+                })
+              }
+              
+              return fileExists
+            })
+            
+            if (!exists) {
+              missingImports.push(`${filePath} imports ${importPath} but file not found`)
+            }
+          }
+        }
+      }
+    }
+    
+    if (missingImports.length > 0) {
+      this.logger.error(`CRITICAL: Missing imports detected for ${appDir}`, { missingImports })
+      throw new Error(`Cannot deploy app with missing imports: ${missingImports.join(', ')}`)
+    }
+    
+    this.logger.info(`✅ All imports validated successfully for ${appDir}`)
   }
 
   private getAllFiles(dir: string): string[] {
