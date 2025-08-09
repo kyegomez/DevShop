@@ -157,8 +157,8 @@ export class VercelDeployer {
     try {
       console.log(`📦 Creating deployment for ${projectName}`)
       
-      // Get all files in the app directory
-      const files = await this.getFileHashes(appDir)
+      // Get all files with content
+      const files = await this.getFilesWithContent(appDir)
       
       // Create deployment
       const deployResponse = await fetch('https://api.vercel.com/v13/deployments', {
@@ -194,20 +194,16 @@ export class VercelDeployer {
     }
   }
 
-  private async getFileHashes(appDir: string): Promise<any[]> {
-    const files: any[] = []
+  private async getFilesWithContent(appDir: string): Promise<any> {
+    const files: any = {}
     
     const addFile = (filePath: string, relativePath: string) => {
       if (!fs.existsSync(filePath)) return
       
-      const content = fs.readFileSync(filePath)
-      const hash = crypto.createHash('sha1').update(content).digest('hex')
-      
-      files.push({
-        file: relativePath,
-        sha: hash,
-        size: content.length
-      })
+      const content = fs.readFileSync(filePath, 'utf8')
+      files[relativePath] = {
+        file: content
+      }
     }
 
     // Add essential files for Next.js app
@@ -216,22 +212,36 @@ export class VercelDeployer {
       'next.config.js',
       'tsconfig.json',
       'tailwind.config.js',
-      'postcss.config.js'
+      'postcss.config.js',
+      'vercel.json',
+      '.gitignore'
     ]
 
     essentialFiles.forEach(file => {
       addFile(path.join(appDir, file), file)
     })
 
-    // Add app directory files
-    const appDirPath = path.join(appDir, 'app')
-    if (fs.existsSync(appDirPath)) {
-      const appFiles = fs.readdirSync(appDirPath)
-      appFiles.forEach(file => {
-        addFile(path.join(appDirPath, file), `app/${file}`)
+    // Add app directory files recursively
+    const addDirectory = (dirPath: string, relativeDirPath: string) => {
+      if (!fs.existsSync(dirPath)) return
+      
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+      entries.forEach(entry => {
+        const fullPath = path.join(dirPath, entry.name)
+        const relativeFilePath = path.join(relativeDirPath, entry.name).replace(/\\/g, '/')
+        
+        if (entry.isDirectory()) {
+          addDirectory(fullPath, relativeFilePath)
+        } else if (entry.isFile()) {
+          addFile(fullPath, relativeFilePath)
+        }
       })
     }
 
+    // Add app directory
+    addDirectory(path.join(appDir, 'app'), 'app')
+
+    console.log(`📁 Prepared ${Object.keys(files).length} files for deployment`)
     return files
   }
 
