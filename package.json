@@ -24,6 +24,9 @@
     "multer": "^1.4.5-lts.1",
     "@types/multer": "^1.4.11"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "eslint": "^8",
     "eslint-config-next": "14.0.0"
