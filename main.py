@@ -7,16 +7,18 @@ multiple applications using Claude's code generation capabilities.
 
 import asyncio
 import concurrent.futures
-import json
 import pandas as pd
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Optional, Any
-import logging
+from loguru import logger
 from datetime import datetime
 import multiprocessing
 import threading
 import os
+from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
+
+
 
 def get_optimal_worker_count() -> int:
     """
@@ -81,22 +83,6 @@ class CSVAppIngester:
             csv_file_path: Path to the CSV file containing app specifications
         """
         self.csv_file_path = Path(csv_file_path)
-        self.logger = self._setup_logger()
-
-    def _setup_logger(self) -> logging.Logger:
-        """Set up logging for the ingester."""
-        logger = logging.getLogger(f"{__name__}.CSVAppIngester")
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-        return logger
 
     def validate_csv_structure(self, df: pd.DataFrame) -> bool:
         """
@@ -121,7 +107,7 @@ class CSVAppIngester:
         missing_columns = required_columns - csv_columns
 
         if missing_columns:
-            self.logger.error(f"Missing required columns: {missing_columns}")
+            logger.error(f"Missing required columns: {missing_columns}")
             return False
 
         return True
@@ -167,19 +153,17 @@ class CSVAppIngester:
                         complexity_level=str(row.get("complexity_level", "medium")),
                     )
                     specifications.append(spec)
-                    self.logger.info(f"Successfully parsed app: {spec.name}")
+                    logger.info(f"Successfully parsed app: {spec.name}")
 
                 except Exception as e:
-                    self.logger.error(f"Error parsing row {index}: {e}")
+                    logger.error(f"Error parsing row {index}: {e}")
                     continue
 
-            self.logger.info(
-                f"Successfully parsed {len(specifications)} app specifications"
-            )
+            logger.info(f"Successfully parsed {len(specifications)} app specifications")
             return specifications
 
         except Exception as e:
-            self.logger.error(f"Error reading CSV file: {e}")
+            logger.error(f"Error reading CSV file: {e}")
             raise
 
 
@@ -188,7 +172,7 @@ class ClaudeAppGenerator:
     Generates applications using Claude Code SDK based on specifications.
     """
 
-    def __init__(self, output_directory: str = "generated_apps"):
+    def __init__(self, output_directory: str = "artifacts"):
         """
         Initialize the app generator.
 
@@ -197,22 +181,6 @@ class ClaudeAppGenerator:
         """
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
-        self.logger = self._setup_logger()
-
-    def _setup_logger(self) -> logging.Logger:
-        """Set up logging for the generator."""
-        logger = logging.getLogger(f"{__name__}.ClaudeAppGenerator")
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-        return logger
 
     def _create_system_prompt(self, spec: AppSpecification) -> str:
         """
@@ -224,30 +192,46 @@ class ClaudeAppGenerator:
         Returns:
             str: System prompt for Claude
         """
-        return f"""You are an expert software developer and architect. You will create a complete, production-ready application based on the following specification:
+        return f"""You are an expert software developer and architect specializing in creating production-ready applications. You will build a complete, functional application based on the following specification.
 
-**Application Name:** {spec.name}
-**Description:** {spec.description}
-**Goal:** {spec.app_goal}
-**Target User:** {spec.target_user}
-**Main Problem Solved:** {spec.main_problem}
-**Design Preferences:** {spec.design_preferences}
-**Tech Stack:** {spec.tech_stack}
-**Complexity Level:** {spec.complexity_level}
-**Additional Requirements:** {spec.additional_requirements}
+**APPLICATION SPECIFICATION:**
+- **Name:** {spec.name}
+- **Description:** {spec.description}
+- **Primary Goal:** {spec.app_goal}
+- **Target Users:** {spec.target_user}
+- **Core Problem:** {spec.main_problem}
+- **Design Preferences:** {spec.design_preferences}
+- **Technology Stack:** {spec.tech_stack}
+- **Complexity Level:** {spec.complexity_level}
+- **Additional Requirements:** {spec.additional_requirements}
 
-Create a complete application that includes:
-1. Proper project structure with all necessary files
-2. Clean, well-documented code following best practices
-3. User interface that matches the design preferences
-4. Error handling and input validation
-5. README with setup and usage instructions
-6. Configuration files (requirements.txt, package.json, etc.)
-7. Basic tests if applicable
+**DEVELOPMENT GUIDELINES:**
 
-Focus on creating a functional, user-friendly application that directly addresses the main problem for the target user. Make sure the code is production-ready and follows modern development practices.
+1. **File Organization:** Create a well-structured project with clear separation of concerns
+2. **Code Quality:** Write clean, maintainable code with comprehensive error handling
+3. **Documentation:** Include detailed README, inline comments, and docstrings
+4. **Production Readiness:** Implement proper logging, configuration management, and deployment considerations
+5. **User Experience:** Create intuitive interfaces that solve the target user's specific problems
+6. **Testing:** Include basic unit tests and validation where appropriate
+7. **Dependencies:** Use modern, stable packages with clear version requirements
 
-Include proper documentation with docstrings for all functions and classes. Ensure the application can be run immediately after setup.
+**DELIVERABLES REQUIRED:**
+- Complete application source code
+- README.md with setup and usage instructions
+- requirements.txt (Python) or package.json (Node.js) with all dependencies
+- Configuration files and environment setup
+- Basic tests or validation scripts
+- Documentation for deployment and maintenance
+
+**TECHNICAL STANDARDS:**
+- Follow language-specific best practices and conventions
+- Implement comprehensive error handling and input validation
+- Use appropriate design patterns for the chosen technology stack
+- Ensure code is immediately runnable after following setup instructions
+- Include proper logging and monitoring capabilities
+- Consider security best practices relevant to the application type
+
+Create a professional-grade application that directly addresses the specified problem for the target users. The application should be ready for real-world deployment and use.
 """
 
     def _create_generation_prompt(self, spec: AppSpecification) -> str:
@@ -260,119 +244,37 @@ Include proper documentation with docstrings for all functions and classes. Ensu
         Returns:
             str: Generation prompt
         """
-        return f"""Please create the complete application "{spec.name}" based on the specification provided in your system prompt. 
+        return f"""Build the complete "{spec.name}" application based on the detailed specification in your system prompt.
 
-Create all necessary files including:
-- Main application code
-- Configuration files
-- README with setup instructions
-- Any required assets or templates
-- Basic tests if applicable
+**IMPLEMENTATION REQUIREMENTS:**
 
-Make sure the application is immediately runnable after following the setup instructions in the README.
+1. **Project Structure:** Create a professional directory structure with proper organization
+2. **Core Implementation:** Build all functionality to fully address the specified problem
+3. **Documentation:** Write comprehensive README.md with clear setup and usage instructions
+4. **Dependencies:** Create proper dependency files (requirements.txt, package.json, etc.)
+5. **Configuration:** Include any necessary config files and environment setup
+6. **Error Handling:** Implement robust error handling throughout the application
+7. **User Interface:** Create an intuitive interface that matches the design preferences
+8. **Testing:** Add basic validation or test files where appropriate
 
-Start by creating the project structure, then implement all the core functionality. Ensure the code is clean, well-documented, and follows best practices for {spec.tech_stack}.
+**TECHNICAL SPECIFICATIONS:**
+- Technology Stack: {spec.tech_stack}
+- Complexity Level: {spec.complexity_level}
+- Target Users: {spec.target_user}
+
+**SUCCESS CRITERIA:**
+- Application runs immediately after following README setup instructions
+- Fully addresses the core problem: {spec.main_problem}
+- Follows modern development best practices
+- Includes proper error handling and user feedback
+- Code is clean, well-commented, and maintainable
+
+Start by creating the project structure, then implement the core functionality systematically. Ensure every file serves a clear purpose and the application is production-ready.
 """
-
-    async def generate_app_mock(self, spec: AppSpecification) -> Dict[str, Any]:
-        """
-        Mock implementation of app generation (replace with actual Claude SDK calls).
-
-        Args:
-            spec: App specification
-
-        Returns:
-            Dict containing generation results
-        """
-        self.logger.info(f"Starting generation for app: {spec.name}")
-
-        # Create app directory
-        app_dir = self.output_directory / spec.name.lower().replace(" ", "_")
-        app_dir.mkdir(exist_ok=True)
-
-        # Mock generation - in real implementation, this would use Claude SDK
-        await asyncio.sleep(2)  # Simulate generation time
-
-        # Create basic files
-        readme_content = f"""# {spec.name}
-
-## Description
-{spec.description}
-
-## Goal
-{spec.app_goal}
-
-## Target User
-{spec.target_user}
-
-## Problem Solved
-{spec.main_problem}
-
-## Design Preferences
-{spec.design_preferences}
-
-## Tech Stack
-{spec.tech_stack}
-
-## Setup Instructions
-1. Navigate to the project directory
-2. Install dependencies
-3. Run the application
-
-## Usage
-[Usage instructions would be generated by Claude]
-
-Generated on: {datetime.now().isoformat()}
-"""
-
-        # Write README
-        (app_dir / "README.md").write_text(readme_content)
-
-        # Create a basic Python app structure
-        if "python" in spec.tech_stack.lower():
-            main_py_content = f'''"""
-{spec.name} - {spec.description}
-
-This application addresses: {spec.main_problem}
-Target users: {spec.target_user}
-"""
-
-def main():
-    """
-    Main entry point for {spec.name}.
-    
-    This function would contain the core application logic
-    generated by Claude based on the specifications.
-    """
-    print(f"Welcome to {spec.name}!")
-    print(f"Description: {spec.description}")
-    print(f"This app helps: {spec.target_user}")
-    print(f"By solving: {spec.main_problem}")
-
-if __name__ == "__main__":
-    main()
-'''
-            (app_dir / "main.py").write_text(main_py_content)
-
-            # Create requirements.txt
-            requirements_content = """# Requirements for this application would be generated by Claude
-# Based on the actual functionality implemented
-"""
-            (app_dir / "requirements.txt").write_text(requirements_content)
-
-        self.logger.info(f"Successfully generated app: {spec.name}")
-
-        return {
-            "success": True,
-            "app_name": spec.name,
-            "output_directory": str(app_dir),
-            "files_created": list(app_dir.glob("*")),
-            "generation_time": datetime.now().isoformat(),
-        }
 
     async def generate_app_with_claude(self, spec: AppSpecification) -> Dict[str, Any]:
         """
-        Generate app using actual Claude Code SDK.
+        Generate app using Claude Code SDK with robust error handling and retry logic.
 
         Args:
             spec: App specification
@@ -380,53 +282,65 @@ if __name__ == "__main__":
         Returns:
             Dict containing generation results
         """
-        try:
-            from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
-            
+        max_retries = 3
+        retry_delay = 2.0
+
+        for attempt in range(max_retries):
             system_prompt = self._create_system_prompt(spec)
             generation_prompt = self._create_generation_prompt(spec)
-            
+
+            # Create app directory
+            app_dir = self.output_directory / spec.name.lower().replace(" ", "_")
+            app_dir.mkdir(exist_ok=True)
+
+            logger.info(
+                f"Starting generation for app: {spec.name} (attempt {attempt + 1}/{max_retries})"
+            )
+
             async with ClaudeSDKClient(
                 options=ClaudeCodeOptions(
                     system_prompt=system_prompt,
-                    max_turns=10,
-                    allowed_tools=["Read", "Write", "Bash", "Grep"]
+                    max_turns=15,  # Increased for more complex generations
+                    allowed_tools=["Read", "Write", "Bash", "Grep", "WebSearch"],
+                    continue_conversation=False,  # Start fresh each time
                 )
             ) as client:
-                
-                # Set working directory to app folder
-                app_dir = self.output_directory / spec.name.lower().replace(' ', '_')
-                app_dir.mkdir(exist_ok=True)
-                
-                # Generate the application
+
+                # Generate the application with detailed progress tracking
                 await client.query(generation_prompt)
-                
+
                 response_text = []
+                message_count = 0
+
                 async for message in client.receive_response():
-                    if hasattr(message, 'content'):
+                    message_count += 1
+                    if hasattr(message, "content"):
                         for block in message.content:
-                            if hasattr(block, 'text'):
+                            if hasattr(block, "text"):
                                 response_text.append(block.text)
-                
+                    elif type(message).__name__ == "ResultMessage":
+                        logger.info(f"App {spec.name}: Received result message")
+                        response_text.append(str(message.result))
+
+                # Validate that files were actually created
+                created_files = list(app_dir.glob("**/*"))
+                if not created_files:
+                    raise ValueError("No files were generated by Claude")
+
+                logger.info(
+                    f"Successfully generated app: {spec.name} with {len(created_files)} files"
+                )
+
                 return {
                     "success": True,
                     "app_name": spec.name,
                     "output_directory": str(app_dir),
-                    "response": ''.join(response_text),
-                    "generation_time": datetime.now().isoformat()
+                    "response": "".join(response_text),
+                    "files_created": [str(f) for f in created_files],
+                    "message_count": message_count,
+                    "generation_time": datetime.now().isoformat(),
+                    "attempt": attempt + 1,
                 }
-                
-        except ImportError:
-            self.logger.error("Claude Code SDK not installed. Using mock implementation.")
-            return await self.generate_app_mock(spec)
-        except Exception as e:
-            self.logger.error(f"Error generating app {spec.name}: {e}")
-            return {
-                "success": False,
-                "app_name": spec.name,
-                "error": str(e),
-                "generation_time": datetime.now().isoformat()
-            }
 
     def generate_app_sync(self, spec: AppSpecification) -> Dict[str, Any]:
         """
@@ -452,7 +366,7 @@ class MultiAppOrchestrator:
     def __init__(
         self,
         csv_file_path: str,
-        output_directory: str = "generated_apps",
+        output_directory: str = "artifacts",
         max_concurrent: Optional[int] = None,
         show_progress: bool = True,
     ):
@@ -473,8 +387,6 @@ class MultiAppOrchestrator:
             max_concurrent if max_concurrent is not None else get_optimal_worker_count()
         )
         self.show_progress = show_progress
-        self.logger = self._setup_logger()
-
         # Track app generation status for progress monitoring
         self.app_statuses = {}
         self.status_lock = threading.Lock()
@@ -482,24 +394,9 @@ class MultiAppOrchestrator:
         self.ingester = CSVAppIngester(csv_file_path)
         self.generator = ClaudeAppGenerator(output_directory)
 
-        self.logger.info(
+        logger.info(
             f"Initialized with {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
-
-    def _setup_logger(self) -> logging.Logger:
-        """Set up logging for the orchestrator."""
-        logger = logging.getLogger(f"{__name__}.MultiAppOrchestrator")
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-
-        return logger
 
     def update_app_status(self, app_name: str, status: str, output: str = ""):
         """
@@ -583,11 +480,11 @@ class MultiAppOrchestrator:
                 self.update_app_status(
                     app_name, "completed", f"Generated in {result['output_directory']}"
                 )
-                self.logger.info(f"✅ Successfully generated: {app_name}")
+                logger.info(f"✅ Successfully generated: {app_name}")
             else:
                 error_msg = result.get("error", "Unknown error")
                 self.update_app_status(app_name, "error", error_msg)
-                self.logger.error(f"❌ Failed to generate {app_name}: {error_msg}")
+                logger.error(f"❌ Failed to generate {app_name}: {error_msg}")
 
             if self.show_progress:
                 self.display_progress_dashboard()
@@ -597,7 +494,7 @@ class MultiAppOrchestrator:
         except Exception as e:
             error_msg = str(e)
             self.update_app_status(app_name, "error", error_msg)
-            self.logger.error(f"❌ Exception generating {app_name}: {error_msg}")
+            logger.error(f"❌ Exception generating {app_name}: {error_msg}")
 
             if self.show_progress:
                 self.display_progress_dashboard()
@@ -627,7 +524,7 @@ class MultiAppOrchestrator:
                 result = await self.generator.generate_app_with_claude(spec)
                 return result
             except Exception as e:
-                self.logger.error(f"Failed to generate app {spec.name}: {e}")
+                logger.error(f"Failed to generate app {spec.name}: {e}")
                 return {
                     "success": False,
                     "app_name": spec.name,
@@ -646,10 +543,10 @@ class MultiAppOrchestrator:
             Dict containing overall results and individual app results
         """
         start_time = datetime.now()
-        self.logger.info(
+        logger.info(
             f"🚀 Starting concurrent multi-app generation from {self.csv_file_path}"
         )
-        self.logger.info(
+        logger.info(
             f"💻 Using {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
 
@@ -660,7 +557,7 @@ class MultiAppOrchestrator:
             if not specifications:
                 raise ValueError("No valid app specifications found in CSV")
 
-            self.logger.info(
+            logger.info(
                 f"📊 Found {len(specifications)} app specifications to generate"
             )
 
@@ -684,7 +581,7 @@ class MultiAppOrchestrator:
                     for spec in specifications
                 }
 
-                self.logger.info(
+                logger.info(
                     f"🔄 Submitted {len(future_to_spec)} apps for concurrent generation"
                 )
 
@@ -709,9 +606,7 @@ class MultiAppOrchestrator:
                             "generation_time": datetime.now().isoformat(),
                         }
                         failed_apps.append(error_result)
-                        self.logger.error(
-                            f"❌ Exception in future for {spec.name}: {e}"
-                        )
+                        logger.error(f"❌ Exception in future for {spec.name}: {e}")
 
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
@@ -733,20 +628,18 @@ class MultiAppOrchestrator:
                 "results": {"successful": successful_apps, "failed": failed_apps},
             }
 
-            self.logger.info(
+            logger.info(
                 f"🎉 Concurrent generation complete: {len(successful_apps)}/{len(specifications)} apps successful"
             )
-            self.logger.info(
+            logger.info(
                 f"⚡ Total time: {total_time:.2f} seconds with {self.max_concurrent} workers"
             )
-            self.logger.info(
+            logger.info(
                 f"📈 Average time per app: {total_time/len(specifications):.2f} seconds"
             )
 
             return summary
 
         except Exception as e:
-            self.logger.error(f"❌ Error in concurrent multi-app generation: {e}")
+            logger.error(f"❌ Error in concurrent multi-app generation: {e}")
             raise
-
-
