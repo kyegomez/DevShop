@@ -9,7 +9,8 @@ import asyncio
 import concurrent.futures
 import multiprocessing
 import os
-import threading
+import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,11 +18,8 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-from loguru import logger
-from swarms import Agent
 from dotenv import load_dotenv
-from examples.ui_dashboard import UIManager
-
+from swarms import Agent
 
 load_dotenv()
 
@@ -36,14 +34,10 @@ def get_optimal_worker_count() -> int:
     Returns:
         int: Optimal number of worker threads
     """
-    try:
-        cpu_count = os.cpu_count()
-        # Use 95% of CPU cores for optimal performance without overwhelming the system
-        optimal_workers = max(1, int(cpu_count * 0.95))
-        return optimal_workers
-    except Exception:
-        # Fallback to a reasonable default
-        return 4
+    cpu_count = os.cpu_count()
+    # Use 95% of CPU cores for optimal performance without overwhelming the system
+    optimal_workers = max(1, int(cpu_count * 0.95))
+    return optimal_workers
 
 
 @dataclass
@@ -114,7 +108,7 @@ class CSVAppIngester:
         missing_columns = required_columns - csv_columns
 
         if missing_columns:
-            logger.error(f"Missing required columns: {missing_columns}")
+            print(f"Missing required columns: {missing_columns}")
             return False
 
         return True
@@ -160,17 +154,16 @@ class CSVAppIngester:
                         complexity_level=str(row.get("complexity_level", "medium")),
                     )
                     specifications.append(spec)
-                    logger.info(f"Successfully parsed app: {spec.name}")
 
                 except Exception as e:
-                    logger.error(f"Error parsing row {index}: {e}")
+                    print(f"Error parsing row {index}: {e}")
                     continue
 
-            logger.info(f"Successfully parsed {len(specifications)} app specifications")
+            print(f"Successfully parsed {len(specifications)} app specifications")
             return specifications
 
         except Exception as e:
-            logger.error(f"Error reading CSV file: {e}")
+            print(f"Error reading CSV file: {e}")
             raise
 
 
@@ -184,23 +177,25 @@ class ClaudeAppGenerator:
         output_directory: str = "artifacts",
         retries: int = 3,
         retry_delay: float = 2.0,
-        ui_manager: Optional[UIManager] = None,
         enable_enrichment: bool = False,
+        debug_mode: bool = False,
+        max_steps: int = 40,
     ):
         """
         Initialize the app generator.
 
         Args:
             output_directory: Directory where generated apps will be stored
-            ui_manager: Optional UI manager for real-time updates
             enable_enrichment: Whether to use product_spec_enricher for enhanced prompts
+            debug_mode: Enable extra verbose logging for Claude outputs
         """
         self.retries = retries
         self.retry_delay = retry_delay
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
-        self.ui_manager = ui_manager
         self.enable_enrichment = enable_enrichment
+        self.debug_mode = debug_mode
+        self.max_steps = max_steps
 
     def _create_system_prompt(self, spec: AppSpecification) -> str:
         """
@@ -233,50 +228,120 @@ class ClaudeAppGenerator:
 
 **IMPORTANT:** Use the enhanced product specification above as your primary guide. It provides detailed requirements, features, and technical specifications that should drive your implementation decisions."""
 
-        return f"""You are an expert software developer and architect specializing in creating production-ready applications. You will build a complete, functional application based on the following specification.
+        return f"""You are an expert software developer specializing in creating functional, user-focused applications. You will build a complete, working application that solves real problems based on the following specification.
 
 {base_spec_section}{enriched_section}
 
-**DEVELOPMENT GUIDELINES:**
+**CRITICAL WORKING DIRECTORY REQUIREMENTS:**
+- ALWAYS work within the artifacts folder as your base directory
+- ALL file operations must be relative to the artifacts folder
+- Before starting any work, ensure you are in the artifacts folder
+- Create the application project structure within the artifacts folder
+- Never work outside of the artifacts folder for any file operations
 
-1. **File Organization:** Create a well-structured project with clear separation of concerns
-2. **Code Quality:** Write clean, maintainable code with comprehensive error handling
-3. **Documentation:** Include detailed README, inline comments, and docstrings
-4. **Production Readiness:** Implement proper logging, configuration management, and deployment considerations
-5. **User Experience:** Create intuitive interfaces that solve the target user's specific problems
-6. **Testing:** Include basic unit tests and validation where appropriate
-7. **Dependencies:** Use modern, stable packages with clear version requirements
+**DEVELOPMENT WORKFLOW:**
+1. **Initialize Working Directory:** Start in artifacts folder and create project subdirectory
+2. **File Organization:** Create a simple, well-structured project with clear file organization
+3. **Core Functionality:** Focus on solving the user's main problem with working, functional code
+4. **Local Execution:** Ensure the application runs locally without external dependencies
+5. **Simple Interface:** Create intuitive interfaces that directly address the user's needs
+6. **Documentation:** Include clear README with simple setup and usage instructions
+7. **Minimal Dependencies:** Use only essential, lightweight packages
+8. **Immediate Usability:** Make the app immediately functional after setup
+
+**SIMPLE PROJECT STRUCTURE (within artifacts folder):**
+```
+artifacts/
+└── {spec.name.lower().replace(' ', '_')}/
+    ├── README.md (clear setup and usage instructions)
+    ├── package.json (Next.js dependencies and scripts)
+    ├── next.config.js (Next.js configuration)
+    ├── tailwind.config.js (Tailwind CSS configuration)
+    ├── src/ (source code directory)
+    │   ├── app/ (Next.js app directory)
+    │   │   ├── page.tsx (main page component)
+    │   │   ├── layout.tsx (root layout)
+    │   │   └── globals.css (global styles with Tailwind)
+    │   ├── components/ (React components)
+    │   └── lib/ (utility functions)
+    ├── public/ (static assets)
+    ├── vercel.json (REQUIRED - Vercel deployment configuration)
+    └── deployment_report.md (deployment status and URLs)
+```
+
+**VERCEL CONFIGURATION REQUIREMENT:**
+- **MANDATORY:** You MUST create a `vercel.json` file for every project
+- The `vercel.json` file must be properly configured for the specific technology stack
+- For Python apps: Include proper build commands, output directory, and Python version
+- For Node.js apps: Include build commands, output directory, and Node.js version
+- For static web apps: Configure proper routing and static file serving
+- The vercel.json file is essential for automatic deployment to Vercel
+- Without this file, the app cannot be deployed to Vercel automatically
+
+**VERCEL.JSON CONFIGURATION FOR NEXT.JS:**
+
+**Next.js App:**
+```json
+{{
+  "version": 2,
+  "builds": [
+    {{
+      "src": "package.json",
+      "use": "@vercel/next"
+    }}
+  ],
+  "routes": [
+    {{
+      "src": "/(.*)",
+      "dest": "/$1"
+    }}
+  ]
+}}
+```
+
+**CRITICAL:** Use the Next.js vercel.json configuration above for all projects. This ensures proper deployment of your Next.js application with Tailwind CSS and React components.
 
 **DELIVERABLES REQUIRED:**
-- Complete application source code
-- README.md with setup and usage instructions
-- requirements.txt (Python) or package.json (Node.js) with all dependencies
-- Configuration files and environment setup
-- Basic tests or validation scripts
-- Documentation for deployment and maintenance
-- GitHub repository setup with proper structure
-- Vercel deployment configuration and automation
+- Complete, functional application that solves the user's core problem
+- Clean, readable source code that runs locally without complex setup
+- Clear README.md with simple setup and usage instructions
+- requirements.txt (Python) or package.json (Node.js) with minimal, essential dependencies
+- Working application that can be run immediately after following setup instructions
+- Focus on core functionality rather than complex integrations or advanced features
+- **MANDATORY:** vercel.json file properly configured for the specific technology stack
+- **MANDATORY:** vercel.json must include correct build commands, output directory, and runtime configuration
+- Live deployment on Vercel with auto-deployment from GitHub
+- deployment_report.md with GitHub repository URL and live Vercel URL
 
-**DEPLOYMENT REQUIREMENTS:**
-- Create a new GitHub repository for the application using the GitHub API
-- Set up proper repository structure with .gitignore, LICENSE, and documentation
-- Configure Vercel deployment through their API for automatic deployments
-- Include vercel.json configuration file for deployment settings
-- Set up environment variables and secrets management for production
-- Implement CI/CD pipeline for automated testing and deployment
-- Include deployment scripts and automation tools
+**GITHUB REPOSITORY WORKFLOW:**
+1. **Repository Creation:** Use GitHub API with GITHUB_PERSONAL_TOKEN to create new repository
+2. **Local Git Setup:** Initialize git repository in the project folder within artifacts
+3. **File Staging:** Add all project files to git staging area
+4. **Initial Commit:** Commit all files with descriptive commit message
+5. **Remote Setup:** Add GitHub repository as remote origin
+6. **Push Code:** Push all code to the main branch of the GitHub repository
+7. **Repository Configuration:** Set up repository settings, description, and topics
+
+**SIMPLE REPOSITORY REQUIREMENTS:**
+- Create a basic GitHub repository using the GitHub API with GITHUB_PERSONAL_TOKEN
+- Initialize repository with .gitignore, README.md, and application files
+- Commit and push the functional application code to the repository
+- Focus on sharing working, usable code that solves the user's problem
+- Include clear instructions for running the application locally
 
 **TECHNICAL STANDARDS:**
-- Follow language-specific best practices and conventions
-- Implement comprehensive error handling and input validation
-- Use appropriate design patterns for the chosen technology stack
-- Ensure code is immediately runnable after following setup instructions
-- Include proper logging and monitoring capabilities
-- Consider security best practices relevant to the application type
-- Implement proper environment configuration for development and production
-- Set up automated deployment workflows
+- Write clean, readable React/TypeScript code that directly solves the user's problem
+- Use Next.js 14+ with App Router for modern, performant web applications
+- Implement responsive design using Tailwind CSS for beautiful, mobile-first interfaces
+- Ensure the application runs immediately after following setup instructions
+- Focus on core functionality that addresses the main problem
+- Keep dependencies minimal and well-justified (Next.js, React, Tailwind CSS)
+- Create a user-friendly interface appropriate for the target users
+- Include basic error handling for common issues
+- Make the app genuinely useful for solving the specified problem
+- Use modern React patterns (hooks, functional components) for maintainable code
 
-Create a professional-grade application that directly addresses the specified problem for the target users. The application should be ready for real-world deployment and use with full GitHub integration and Vercel hosting.
+Create a functional, user-focused Next.js web application with React and Tailwind CSS that directly solves the target users' main problem. The application should work immediately after setup and provide real value without requiring complex infrastructure or external services.
 """
 
     def _create_generation_prompt(self, spec: AppSpecification) -> str:
@@ -296,68 +361,160 @@ Create a professional-grade application that directly addresses the specified pr
 
         return f"""Build the complete "{spec.name}" application based on the detailed specification in your system prompt.{enrichment_reference}
 
+**CRITICAL FIRST STEPS:**
+1. **Verify Working Directory:** Ensure you are working in the artifacts folder
+2. **Create Project Directory:** Create subdirectory `{spec.name.lower().replace(' ', '_')}` within artifacts
+3. **Change to Project Directory:** Navigate into the project directory for all subsequent operations
+4. **Verify Directory Structure:** Confirm all file operations are within artifacts/{spec.name.lower().replace(' ', '_')}/
+
 **IMPLEMENTATION REQUIREMENTS:**
 
-1. **Project Structure:** Create a professional directory structure with proper organization
-2. **Core Implementation:** Build all functionality to fully address the specified problem
-3. **Documentation:** Write comprehensive README.md with clear setup and usage instructions
-4. **Dependencies:** Create proper dependency files (requirements.txt, package.json, etc.)
-5. **Configuration:** Include any necessary config files and environment setup
-6. **Error Handling:** Implement robust error handling throughout the application
-7. **User Interface:** Create an intuitive interface that matches the design preferences
-8. **Testing:** Add basic validation or test files where appropriate
+1. **Next.js Structure:** Create a clean, organized Next.js project following the simple structure in system prompt
+2. **Core Problem Solving:** Build React functionality that directly addresses the user's main problem
+3. **Local Execution:** Ensure the Next.js app runs completely locally without external APIs or services
+4. **Minimal Dependencies:** Use only essential Next.js, React, and Tailwind CSS packages
+5. **Tailwind Interface:** Create an intuitive, responsive interface using Tailwind CSS that's easy for target users to understand
+6. **Immediate Functionality:** Make the Next.js app work right away after setup with real, useful features
+7. **Vercel Ready:** Ensure the Next.js app is compatible with Vercel deployment requirements
+8. **Vercel Configuration:** **MANDATORY** - Create a properly configured vercel.json file for Next.js deployment
+9. **Simple Documentation:** Write clear, concise setup and usage instructions for Next.js development
+10. **Focus on Value:** Prioritize features that directly solve the stated problem over technical complexity
 
-**DEPLOYMENT AND HOSTING REQUIREMENTS:**
+**REPOSITORY AND DEPLOYMENT:**
 
 1. **GitHub Repository Setup:**
-   - Create a new GitHub repository using the GitHub API
-   - Initialize with proper .gitignore, LICENSE, and README.md
-   - Set up repository structure with appropriate branches
-   - Configure repository settings and permissions
-   - Add repository topics and description
+   - Create a GitHub repository using the GitHub API with GITHUB_PERSONAL_TOKEN
+   - Initialize with basic .gitignore, README.md, and all project files
+   - Commit and push the functional application code
+   - Include clear setup instructions in README for local execution
 
-2. **Vercel Deployment Configuration:**
-   - Create vercel.json configuration file for deployment settings
-   - Set up Vercel project through their API
-   - Configure build commands and output directory
-   - Set up environment variables for production
-   - Enable automatic deployments from GitHub
+2. **Vercel Deployment Setup:**
+   - Create vercel.json configuration file with proper build and deployment settings
+   - Use VERCEL_TOKEN environment variable to authenticate with Vercel API
+   - Create new Vercel project using the Vercel CLI or API
+   - Link the Vercel project to the GitHub repository for auto-deployment
+   - Configure automatic deployments from GitHub main branch
+   - Set up any required environment variables for the application
+   - Deploy the application to production and verify it works live
+   - Test all core functionality on the live deployment
 
-3. **CI/CD Pipeline:**
-   - Create GitHub Actions workflows for automated testing
-   - Set up deployment automation to Vercel
-   - Include build and test scripts
-   - Configure deployment previews for pull requests
-
-4. **Production Setup:**
-   - Include deployment scripts and configuration
-   - Set up monitoring and error tracking
-   - Configure custom domain (if applicable)
-   - Implement security headers and best practices
+3. **Local and Live Functionality:**
+   - Ensure the app works locally on any machine
+   - Verify the live deployment functions correctly
+   - Include both local setup and live URL in README
+   - Test that core features work in both environments
 
 **TECHNICAL SPECIFICATIONS:**
-- Technology Stack: {spec.tech_stack}
+- Technology Stack: Next.js 14+, React 18+, Tailwind CSS
 - Complexity Level: {spec.complexity_level}
 - Target Users: {spec.target_user}
 
 **SUCCESS CRITERIA:**
-- Application runs immediately after following README setup instructions
-- Fully addresses the core problem: {spec.main_problem}
-- Follows modern development best practices
-- Includes proper error handling and user feedback
-- Code is clean, well-commented, and maintainable
-- Successfully deployed to Vercel with custom domain
-- GitHub repository is properly configured with automated workflows
+- Next.js application runs immediately after following simple setup instructions
+- Directly solves the core problem: {spec.main_problem}
+- Works locally without external dependencies or complex setup
+- Provides immediate value to the target users
+- React/TypeScript code is clean, readable, and easy to understand
+- Tailwind CSS interface is intuitive, responsive, and user-friendly
+- App actually functions and is genuinely useful for the stated purpose
+- **MANDATORY:** vercel.json file is properly configured for Next.js deployment
+- **MANDATORY:** vercel.json includes correct Next.js build configuration
+- Successfully deployed to Vercel with working live URL
+- Auto-deployment configured from GitHub repository
+- Both local and live versions function correctly
 
-**DEPLOYMENT WORKFLOW:**
-1. Create and configure GitHub repository
-2. Set up Vercel project and link to repository
-3. Configure environment variables and build settings
-4. Deploy application and verify functionality
-5. Set up monitoring and analytics
-6. Document deployment process and maintenance procedures
+**DEVELOPMENT WORKFLOW (ALL WITHIN ARTIFACTS FOLDER):**
 
-Start by creating the project structure, then implement the core functionality systematically. After completing the application, set up GitHub repository and Vercel deployment with full automation. Ensure every file serves a clear purpose and the application is production-ready with live deployment.
+**Phase 1: Local Application Development**
+1. **Verify Location:** Confirm you are in artifacts/{spec.name.lower().replace(' ', '_')}/ directory
+2. **Create Next.js Project:** Initialize Next.js project with proper configuration files
+3. **Build Functionality:** Implement React components and features that address the main problem
+4. **Style with Tailwind:** Apply Tailwind CSS for responsive, beautiful interface design
+5. **Create Vercel Config:** **MANDATORY** - Generate vercel.json with Next.js deployment configuration
+6. **Test Locally:** Verify the Next.js application works correctly and provides real value
+
+**Phase 2: Repository Setup**
+1. **Initialize Git:** Run `git init` in the project directory
+2. **Create .gitignore:** Generate a basic .gitignore file
+3. **Stage Files:** Add all project files to git with `git add .`
+4. **Initial Commit:** Create commit with message "Initial commit: functional {spec.name} app"
+
+**Phase 3: GitHub Repository Creation**
+1. **Create Repository:** Use GitHub API with GITHUB_PERSONAL_TOKEN to create repository
+2. **Add Remote:** Add GitHub repository as remote origin
+3. **Push Code:** Push functional code to GitHub repository
+4. **Verify Upload:** Confirm the working application is uploaded
+
+**Phase 4: Vercel Deployment Setup**
+1. **Create vercel.json:** Generate Vercel configuration file with proper settings
+2. **Authenticate Vercel:** Use VERCEL_TOKEN for Vercel API authentication
+3. **Create Vercel Project:** Set up new Vercel project and link to GitHub repository
+4. **Configure Auto-Deploy:** Enable automatic deployments from GitHub main branch
+5. **Deploy Application:** Deploy the app and verify it works live
+6. **Test Live URL:** Confirm the live deployment functions correctly
+
+**Phase 5: Documentation and Verification**
+1. **Generate Deployment Report:** Create deployment_report.md with URLs and status
+2. **Update README:** Include both local setup and live deployment URL
+3. **Final Testing:** Test both local and live versions work correctly
+4. **Validate Functionality:** Confirm the app solves the stated problem in both environments
+
+**GITHUB INTEGRATION REQUIREMENTS:**
+- Use the GITHUB_PERSONAL_TOKEN environment variable for GitHub API operations
+- Create repository with descriptive name based on the application name
+- Initialize with basic README that explains how to run the app locally
+- Include simple setup and usage instructions
+- Focus on sharing functional, working code rather than complex workflows
+
+**DEPLOYMENT REPORT REQUIREMENTS:**
+Create a detailed 'deployment_report.md' file containing:
+- Brief description of what the app does and the problem it solves
+- GitHub repository URL and setup status
+- Vercel deployment URL and live application link
+- Local setup and installation instructions
+- How to use the main features (both locally and live)
+- Deployment configuration details
+- Auto-deployment status from GitHub to Vercel
+- Any environment variables or configuration notes
+- Testing results for both local and live versions
+
+**ENVIRONMENT VARIABLE USAGE:**
+- Access GITHUB_PERSONAL_TOKEN from environment variables for GitHub API operations
+- Access VERCEL_TOKEN from environment variables for Vercel API operations
+- Validate both tokens are available before attempting deployment operations
+- Use secure token handling practices throughout the deployment process
+- Keep application environment requirements minimal for local execution
+
+**ARTIFACTS FOLDER COMPLIANCE:**
+- MUST start all work from the artifacts folder
+- MUST create project subdirectory within artifacts: artifacts/{spec.name.lower().replace(' ', '_')}/
+- ALL file operations must be relative to the project directory within artifacts
+- Initialize git repository within the artifacts project directory
+- Commit and push from the artifacts project directory
+- Never work outside of the artifacts folder structure
+
+**STEP-BY-STEP EXECUTION PLAN:**
+1. **Setup Phase:** Verify artifacts folder location and create project subdirectory
+2. **Development Phase:** Build functional application within artifacts/{spec.name.lower().replace(' ', '_')}/
+3. **Local Testing Phase:** Verify the app works locally and solves the user's problem
+4. **Git Phase:** Initialize git, stage files, and commit working application
+5. **GitHub Phase:** Create repository and push functional code
+6. **Vercel Deployment Phase:** Create vercel.json, set up Vercel project, and deploy live
+7. **Verification Phase:** Test both local and live versions work correctly
+8. **Documentation Phase:** Create deployment report with all URLs and usage instructions
+
+**AUTO-DEPLOYMENT WORKFLOW:**
+1. **Verify Tokens:** Ensure both GITHUB_PERSONAL_TOKEN and VERCEL_TOKEN are available
+2. **Local Development:** Build and test the application locally first
+3. **Git Setup:** Initialize git repository and commit all files
+4. **GitHub Deploy:** Create GitHub repository and push code
+5. **Vercel Configuration:** Create vercel.json with proper deployment settings
+6. **Vercel Project Setup:** Use Vercel API to create project and link to GitHub
+7. **Auto-Deploy Configuration:** Enable automatic deployments from GitHub main branch
+8. **Live Deployment:** Deploy to production and verify functionality
+9. **Documentation Update:** Update README and create deployment report with all URLs
+
+Start by verifying the artifacts folder location and required tokens, then create the project subdirectory and implement the core functionality that directly solves the user's problem. After ensuring local functionality, deploy to Vercel for live access with auto-deployment configured. Focus on making the application immediately useful both locally and live, providing real value to the target users in both environments.
 """
 
     async def generate_app_with_claude(self, spec: AppSpecification) -> Dict[str, Any]:
@@ -374,42 +531,10 @@ Start by creating the project structure, then implement the core functionality s
 
         # Enrich specification if enabled
         if self.enable_enrichment and not spec.enriched_spec:
-            if self.ui_manager:
-                self.ui_manager.update_app_status(
-                    spec.name, "running", 5.0, "Enriching product specification..."
-                )
             try:
-                logger.info(f"Enriching specification for app: {spec.name}")
                 spec.enriched_spec = product_spec_enricher(spec)
-                if self.ui_manager:
-                    self.ui_manager.log_app_activity(
-                        spec.name, "Product specification enriched"
-                    )
-                    self.ui_manager.update_app_status(
-                        spec.name,
-                        "running",
-                        8.0,
-                        "Specification enriched, initializing Claude SDK...",
-                    )
-                logger.info(f"Successfully enriched specification for app: {spec.name}")
             except Exception as e:
-                logger.warning(f"Failed to enrich specification for {spec.name}: {e}")
-                if self.ui_manager:
-                    self.ui_manager.log_app_activity(
-                        spec.name, f"Enrichment failed: {e}"
-                    )
-                    self.ui_manager.update_app_status(
-                        spec.name,
-                        "running",
-                        8.0,
-                        "Enrichment failed, proceeding with original spec...",
-                    )
-
-        # Update UI that generation is starting
-        if self.ui_manager:
-            self.ui_manager.update_app_status(
-                spec.name, "running", 10.0, "Initializing Claude SDK..."
-            )
+                print(f"Failed to enrich specification for {spec.name}: {e}")
 
         for attempt in range(max_retries):
             try:
@@ -420,54 +545,35 @@ Start by creating the project structure, then implement the core functionality s
                 app_dir = self.output_directory / spec.name.lower().replace(" ", "_")
                 app_dir.mkdir(exist_ok=True)
 
-                logger.info(
+                print(
                     f"Starting generation for app: {spec.name} (attempt {attempt + 1}/{max_retries})"
                 )
 
-                if self.ui_manager:
-                    self.ui_manager.update_app_status(
-                        spec.name,
-                        "running",
-                        15.0,
-                        f"Starting generation (attempt {attempt + 1})",
-                    )
+                # Log the Claude SDK configuration
+                claude_options = ClaudeCodeOptions(
+                    system_prompt=system_prompt,
+                    max_turns=self.max_steps,  # Sufficient for local app development and GitHub setup
+                    allowed_tools=[
+                        "Read",
+                        "Write",
+                        "Bash",
+                        "GitHub",
+                        "Git",
+                        "Grep",
+                        "WebSearch",
+                    ],
+                    continue_conversation=False,  # Start fresh each time
+                )
 
-                async with ClaudeSDKClient(
-                    options=ClaudeCodeOptions(
-                        system_prompt=system_prompt,
-                        max_turns=20,  # Increased for GitHub/Vercel setup
-                        allowed_tools=["Read", "Write", "Bash", "Grep", "WebSearch"],
-                        continue_conversation=False,  # Start fresh each time
-                    )
-                ) as client:
-
-                    if self.ui_manager:
-                        self.ui_manager.update_app_status(
-                            spec.name,
-                            "running",
-                            25.0,
-                            "Connected to Claude, sending prompt...",
-                        )
-
-                    # Generate the application with detailed progress tracking
+                async with ClaudeSDKClient(options=claude_options) as client:
+                    # Generate the application
                     await client.query(generation_prompt)
 
                     response_text = []
                     message_count = 0
-                    progress_increment = (
-                        60.0 / 20
-                    )  # 60% for message processing, divided by max_turns
-
-                    if self.ui_manager:
-                        self.ui_manager.update_app_status(
-                            spec.name, "running", 35.0, "Processing Claude responses..."
-                        )
 
                     async for message in client.receive_response():
                         message_count += 1
-                        current_progress = min(
-                            35.0 + (message_count * progress_increment), 90.0
-                        )
 
                         if hasattr(message, "content"):
                             for block in message.content:
@@ -475,54 +581,28 @@ Start by creating the project structure, then implement the core functionality s
                                     text_content = block.text
                                     response_text.append(text_content)
 
-                                    # Send Claude message to UI (truncated for display)
-                                    if self.ui_manager:
-                                        self.ui_manager.add_claude_message(
-                                            spec.name, text_content
-                                        )
-                                        self.ui_manager.update_app_status(
-                                            spec.name,
-                                            "running",
-                                            current_progress,
-                                            f"Processing message {message_count}/20",
-                                        )
+                                elif hasattr(block, "type"):
+                                    if self.debug_mode and hasattr(block, "input"):
+                                        input_str = str(block.input)
+                                        if len(input_str) > 200:
+                                            input_str = (
+                                                input_str[:200] + "... (truncated)"
+                                            )
+                                        print(f"Tool Input: {input_str}")
 
                         elif type(message).__name__ == "ResultMessage":
-                            logger.info(f"App {spec.name}: Received result message")
                             result_text = str(message.result)
                             response_text.append(result_text)
-
-                            if self.ui_manager:
-                                self.ui_manager.add_claude_message(
-                                    spec.name, f"Result: {result_text}"
-                                )
-                                self.ui_manager.log_app_activity(
-                                    spec.name, "Received result message from Claude"
-                                )
-
-                    if self.ui_manager:
-                        self.ui_manager.update_app_status(
-                            spec.name, "running", 95.0, "Validating generated files..."
-                        )
 
                     # Validate that files were actually created
                     created_files = list(app_dir.glob("**/*"))
                     if not created_files:
                         raise ValueError("No files were generated by Claude")
 
-                    # Update UI with files created
-                    if self.ui_manager:
-                        file_names = [f.name for f in created_files if f.is_file()]
-                        self.ui_manager.add_files_created(spec.name, file_names)
-                        self.ui_manager.update_app_status(
-                            spec.name,
-                            "completed",
-                            100.0,
-                            f"Generated {len(created_files)} files successfully",
-                        )
-
-                    logger.info(
-                        f"Successfully generated app: {spec.name} with {len(created_files)} files"
+                    # Log file information
+                    file_list = [f for f in created_files if f.is_file()]
+                    print(
+                        f"Successfully generated app: {spec.name} with {len(file_list)} files in {app_dir}"
                     )
 
                     return {
@@ -541,40 +621,15 @@ Start by creating the project structure, then implement the core functionality s
 
                 error_msg = str(e)
                 tb_str = traceback.format_exc()
-                logger.warning(
-                    f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}\nTraceback:\n{tb_str}"
+                print(
+                    f"Attempt {attempt + 1}/{max_retries} failed for {spec.name}: {error_msg}"
                 )
-
-                if self.ui_manager:
-                    self.ui_manager.update_app_status(
-                        spec.name,
-                        "error" if attempt == max_retries - 1 else "running",
-                        0.0,
-                        f"Attempt {attempt + 1} failed",
-                        error_msg,
-                    )
 
                 # If not the last attempt, add retry delay
                 if attempt < max_retries - 1:
-                    if self.ui_manager:
-                        self.ui_manager.update_app_status(
-                            spec.name,
-                            "running",
-                            0.0,
-                            f"Retrying in {self.retry_delay}s... (attempt {attempt + 2}/{max_retries})",
-                        )
                     await asyncio.sleep(self.retry_delay)
 
         # If we get here, all retries failed
-        if self.ui_manager:
-            self.ui_manager.update_app_status(
-                spec.name,
-                "error",
-                0.0,
-                "All retry attempts failed",
-                f"Failed after {max_retries} attempts",
-            )
-
         return {
             "success": False,
             "app_name": spec.name,
@@ -606,7 +661,7 @@ def product_spec_enricher(spec: AppSpecification) -> str:
             "You are an expert product manager. Given a basic app idea, "
             "write a clear, actionable product spec for developers. "
             "Be concise, practical, and cover key requirements, users, features, "
-            "tech stack, and success criteria."
+            "tech stack, and the most important features to build first."
         ),
         model_name="claude-sonnet-4-20250514",
         dynamic_temperature_enabled=True,
@@ -630,7 +685,7 @@ def product_spec_enricher(spec: AppSpecification) -> str:
         "2. Key features (bulleted)\n"
         "3. User flows or main use cases\n"
         "4. Technical requirements (stack, APIs, data)\n"
-        "5. Success criteria\n"
+        "5. The most important features to build first\n"
         "Keep it clear and actionable for a dev team."
     )
 
@@ -651,10 +706,8 @@ class MultiAppOrchestrator:
         csv_file_path: str,
         output_directory: str = "artifacts",
         max_concurrent: Optional[int] = None,
-        show_progress: bool = True,
-        enable_ui: bool = True,
-        show_claude_output: bool = True,
         enable_enrichment: bool = False,
+        debug_mode: bool = False,
     ):
         """
         Initialize the orchestrator.
@@ -664,10 +717,8 @@ class MultiAppOrchestrator:
             output_directory: Directory for generated apps
             max_concurrent: Maximum number of concurrent app generations.
                           If None, uses optimal count based on CPU cores
-            show_progress: Whether to show real-time progress dashboard
-            enable_ui: Whether to enable the Rich console UI
-            show_claude_output: Whether to show Claude agent outputs in UI
             enable_enrichment: Whether to enable product specification enrichment
+            debug_mode: Enable extra verbose logging for Claude outputs
         """
         self.csv_file_path = csv_file_path
         self.output_directory = output_directory
@@ -675,85 +726,19 @@ class MultiAppOrchestrator:
         self.max_concurrent = (
             max_concurrent if max_concurrent is not None else get_optimal_worker_count()
         )
-        self.show_progress = show_progress
-        self.enable_ui = enable_ui
         self.enable_enrichment = enable_enrichment
-
-        # Initialize UI Manager
-        self.ui_manager = (
-            UIManager(show_claude_output=show_claude_output) if enable_ui else None
-        )
-
-        # Track app generation status for progress monitoring (legacy)
-        self.app_statuses = {}
-        self.status_lock = threading.Lock()
+        self.debug_mode = debug_mode
 
         self.ingester = CSVAppIngester(csv_file_path)
         self.generator = ClaudeAppGenerator(
             output_directory,
-            ui_manager=self.ui_manager,
             enable_enrichment=enable_enrichment,
+            debug_mode=debug_mode,
         )
 
-        logger.info(
+        print(
             f"Initialized with {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
-        if enable_ui:
-            logger.info("Rich console UI enabled for real-time monitoring")
-
-    def update_app_status(self, app_name: str, status: str, output: str = ""):
-        """
-        Thread-safe update of app generation status.
-
-        Args:
-            app_name: Name of the app being generated
-            status: Current status (pending, running, completed, error)
-            output: Output or error message
-        """
-        with self.status_lock:
-            self.app_statuses[app_name] = {
-                "status": status,
-                "output": output,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-    def display_progress_dashboard(self, title: str = "🚀 App Generation Progress"):
-        """
-        Display real-time progress dashboard showing status of all apps.
-
-        Args:
-            title: Dashboard title
-        """
-        if not self.show_progress:
-            return
-
-        print(f"\n{title}")
-        print("=" * 80)
-
-        with self.status_lock:
-            for app_name, status_info in self.app_statuses.items():
-                status = status_info["status"]
-                timestamp = status_info["timestamp"]
-
-                # Status emoji mapping
-                status_emoji = {
-                    "pending": "⏳",
-                    "running": "🔄",
-                    "completed": "✅",
-                    "error": "❌",
-                }
-
-                emoji = status_emoji.get(status, "❓")
-                print(f"{emoji} {app_name:<30} {status:<12} {timestamp}")
-
-                # Show output preview for completed/error states
-                if status in ["completed", "error"] and status_info["output"]:
-                    output_preview = status_info["output"][:100]
-                    if len(status_info["output"]) > 100:
-                        output_preview += "..."
-                    print(f"   └─ {output_preview}")
-
-        print()
 
     def generate_single_app_concurrent(self, spec: AppSpecification) -> Dict[str, Any]:
         """
@@ -771,36 +756,22 @@ class MultiAppOrchestrator:
         app_name = spec.name
 
         try:
-            # Update status to running
-            self.update_app_status(app_name, "running", "Starting generation...")
-            if self.show_progress:
-                self.display_progress_dashboard()
+            print(f"Starting generation for: {app_name}")
 
             # Generate the app (this calls the sync wrapper)
             result = self.generator.generate_app_sync(spec)
 
             if result.get("success", False):
-                self.update_app_status(
-                    app_name, "completed", f"Generated in {result['output_directory']}"
-                )
-                logger.info(f"✅ Successfully generated: {app_name}")
+                print(f"✅ Successfully generated: {app_name}")
             else:
                 error_msg = result.get("error", "Unknown error")
-                self.update_app_status(app_name, "error", error_msg)
-                logger.error(f"❌ Failed to generate {app_name}: {error_msg}")
-
-            if self.show_progress:
-                self.display_progress_dashboard()
+                print(f"❌ Failed to generate {app_name}: {error_msg}")
 
             return result
 
         except Exception as e:
             error_msg = str(e)
-            self.update_app_status(app_name, "error", error_msg)
-            logger.error(f"❌ Exception generating {app_name}: {error_msg}")
-
-            if self.show_progress:
-                self.display_progress_dashboard()
+            print(f"❌ Exception generating {app_name}: {error_msg}")
 
             return {
                 "success": False,
@@ -808,32 +779,6 @@ class MultiAppOrchestrator:
                 "error": error_msg,
                 "generation_time": datetime.now().isoformat(),
             }
-
-    async def _generate_single_app(
-        self, spec: AppSpecification, semaphore: asyncio.Semaphore
-    ) -> Dict[str, Any]:
-        """
-        Generate a single app with concurrency control.
-
-        Args:
-            spec: App specification
-            semaphore: Asyncio semaphore for concurrency control
-
-        Returns:
-            Dict containing generation results
-        """
-        async with semaphore:
-            try:
-                result = await self.generator.generate_app_with_claude(spec)
-                return result
-            except Exception as e:
-                logger.error(f"Failed to generate app {spec.name}: {e}")
-                return {
-                    "success": False,
-                    "app_name": spec.name,
-                    "error": str(e),
-                    "generation_time": datetime.now().isoformat(),
-                }
 
     def run(self) -> Dict[str, Any]:
         """
@@ -846,14 +791,11 @@ class MultiAppOrchestrator:
             Dict containing overall results and individual app results
         """
         start_time = datetime.now()
-        logger.info(
-            f"🚀 Starting concurrent multi-app generation from {self.csv_file_path}"
-        )
-        logger.info(
+        print(f"🚀 Starting concurrent multi-app generation from {self.csv_file_path}")
+        print(
             f"💻 Using {self.max_concurrent} concurrent workers (CPU cores: {multiprocessing.cpu_count()})"
         )
 
-        ui_started = False
         try:
             # Read app specifications
             specifications = self.ingester.read_app_specifications()
@@ -861,27 +803,7 @@ class MultiAppOrchestrator:
             if not specifications:
                 raise ValueError("No valid app specifications found in CSV")
 
-            logger.info(
-                f"📊 Found {len(specifications)} app specifications to generate"
-            )
-
-            # Initialize UI if enabled
-            if self.ui_manager:
-                app_names = [spec.name for spec in specifications]
-                self.ui_manager.initialize(app_names)
-                self.ui_manager.start()
-                ui_started = True
-                logger.info("🎨 Rich console UI started")
-
-            # Initialize status tracking for all apps (legacy support)
-            for spec in specifications:
-                self.update_app_status(spec.name, "pending", "Queued for generation")
-
-            # Show initial dashboard (legacy)
-            if self.show_progress and not self.ui_manager:
-                self.display_progress_dashboard(
-                    "🚀 Initializing Concurrent App Generation"
-                )
+            print(f"📊 Found {len(specifications)} app specifications to generate")
 
             # Generate ALL apps concurrently using ThreadPoolExecutor
             with concurrent.futures.ThreadPoolExecutor(
@@ -893,7 +815,7 @@ class MultiAppOrchestrator:
                     for spec in specifications
                 }
 
-                logger.info(
+                print(
                     f"🔄 Submitted {len(future_to_spec)} apps for concurrent generation"
                 )
 
@@ -918,21 +840,19 @@ class MultiAppOrchestrator:
                             "generation_time": datetime.now().isoformat(),
                         }
                         failed_apps.append(error_result)
-                        logger.error(f"❌ Exception in future for {spec.name}: {e}")
+                        print(f"❌ Exception in future for {spec.name}: {e}")
 
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
 
-            # Stop UI and show final results
-            if ui_started and self.ui_manager:
-                # Give a moment for final updates to be displayed
-                import time
-
-                time.sleep(1)
-                self.ui_manager.stop()
-            elif self.show_progress:
-                # Display final results (legacy)
-                self.display_progress_dashboard("🎉 Final Generation Results")
+            # Deploy successful apps to Vercel
+            deployment_results = None
+            if successful_apps:
+                try:
+                    deployment_results = self.deploy_apps_to_vercel(successful_apps)
+                except Exception as e:
+                    print(f"❌ Error during Vercel deployment: {e}")
+                    deployment_results = {"success": False, "error": str(e)}
 
             summary = {
                 "total_apps": len(specifications),
@@ -945,69 +865,192 @@ class MultiAppOrchestrator:
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
                 "results": {"successful": successful_apps, "failed": failed_apps},
+                "vercel_deployment": deployment_results,
             }
 
-            logger.info(
+            print(
                 f"🎉 Concurrent generation complete: {len(successful_apps)}/{len(specifications)} apps successful"
             )
-            logger.info(
+            print(
                 f"⚡ Total time: {total_time:.2f} seconds with {self.max_concurrent} workers"
             )
-            logger.info(
+            print(
                 f"📈 Average time per app: {total_time/len(specifications):.2f} seconds"
             )
 
             return summary
 
         except Exception as e:
-            # Ensure UI is stopped even on error
-            if ui_started and self.ui_manager:
-                self.ui_manager.stop()
-            logger.error(f"❌ Error in concurrent multi-app generation: {e}")
+            print(f"❌ Error in concurrent multi-app generation: {e}")
             raise
+
+    def deploy_apps_to_vercel(
+        self, successful_apps: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Deploy all successfully generated apps to Vercel.
+
+        Args:
+            successful_apps: List of successful app generation results
+
+        Returns:
+            Dict containing deployment results with URLs
+        """
+
+        # Check if Vercel token is available
+        vercel_token = os.getenv("VERCEL_TOKEN")
+        if not vercel_token:
+            return {
+                "success": False,
+                "error": "VERCEL_TOKEN not found",
+                "skipped": True,
+            }
+
+        deployment_results = []
+        failed_deployments = []
+
+        for app_result in successful_apps:
+            app_name = app_result.get("app_name", "unknown")
+            app_path = app_result.get("output_directory", "")
+
+            if not app_path or not os.path.exists(app_path):
+                continue
+
+            try:
+                # Create a unique project name for Vercel
+                project_name = f"devshop-{app_name.lower().replace(' ', '-').replace('_', '-')}-{int(time.time())}"
+
+                # Change to app directory
+                os.chdir(app_path)
+
+                # Initialize Vercel project
+                init_cmd = [
+                    "vercel",
+                    "--yes",
+                    "--token",
+                    vercel_token,
+                    "--name",
+                    project_name,
+                ]
+
+                init_result = subprocess.run(
+                    init_cmd, capture_output=True, text=True, timeout=60
+                )
+
+                if init_result.returncode != 0:
+                    failed_deployments.append(
+                        {
+                            "app_name": app_name,
+                            "error": f"Vercel init failed: {init_result.stderr}",
+                        }
+                    )
+                    continue
+
+                # Deploy to Vercel
+                deploy_cmd = ["vercel", "--prod", "--yes", "--token", vercel_token]
+
+                deploy_result = subprocess.run(
+                    deploy_cmd, capture_output=True, text=True, timeout=120
+                )
+
+                if deploy_result.returncode != 0:
+                    failed_deployments.append(
+                        {
+                            "app_name": app_name,
+                            "error": f"Vercel deployment failed: {deploy_result.stderr}",
+                        }
+                    )
+                    continue
+
+                # Extract deployment URL from output
+                deployment_url = None
+                for line in deploy_result.stdout.split("\n"):
+                    if "https://" in line and "vercel.app" in line:
+                        deployment_url = line.strip()
+                        break
+
+                if not deployment_url:
+                    # Try to get URL from stderr (sometimes Vercel outputs there)
+                    for line in deploy_result.stderr.split("\n"):
+                        if "https://" in line and "vercel.app" in line:
+                            deployment_url = line.strip()
+                            break
+
+                if deployment_url:
+                    deployment_results.append(
+                        {
+                            "app_name": app_name,
+                            "deployment_url": deployment_url,
+                            "project_name": project_name,
+                            "status": "success",
+                        }
+                    )
+                else:
+                    deployment_results.append(
+                        {
+                            "app_name": app_name,
+                            "deployment_url": "URL not found",
+                            "project_name": project_name,
+                            "status": "success_no_url",
+                        }
+                    )
+
+                # Wait a bit before next deployment to avoid rate limiting
+                time.sleep(2)
+
+            except subprocess.TimeoutExpired:
+                failed_deployments.append(
+                    {"app_name": app_name, "error": "Deployment timeout"}
+                )
+            except Exception as e:
+                failed_deployments.append(
+                    {"app_name": app_name, "error": f"Unexpected error: {str(e)}"}
+                )
+            finally:
+                # Return to original directory
+                os.chdir(self.output_directory)
+
+        # Summary of deployment results
+        deployment_summary = {
+            "total_apps": len(successful_apps),
+            "successful_deployments": len(deployment_results),
+            "failed_deployments": len(failed_deployments),
+            "deployment_results": deployment_results,
+            "failed_deployments": failed_deployments,
+        }
+
+        return deployment_summary
 
 
 def run_multi_app_generation(
-    csv_file_path: str,
-    output_directory: str = "artifacts",
-    max_concurrent: Optional[int] = None,
-    enable_ui: bool = True,
-    show_claude_output: bool = True,
-    enable_enrichment: bool = False,
+    *args,
+    **kwargs,
 ) -> Dict[str, Any]:
     """
-    Convenience function to run multi-app generation with Rich UI.
+    Convenience function to run multi-app generation.
 
     Args:
         csv_file_path: Path to CSV file with app specifications
         output_directory: Directory for generated apps
         max_concurrent: Maximum concurrent workers (auto-calculated if None)
-        enable_ui: Whether to enable the Rich console UI
-        show_claude_output: Whether to show Claude agent outputs in UI
         enable_enrichment: Whether to enable product specification enrichment
+        debug_mode: Enable extra verbose logging for Claude outputs
 
     Returns:
         Dict containing generation results and statistics
 
     Example:
         ```python
-        # Run with Rich UI and enrichment enabled
-        results = run_multi_app_generation("sample.csv", enable_ui=True, enable_enrichment=True)
+        # Run with enrichment enabled
+        results = run_multi_app_generation("sample.csv", enable_enrichment=True)
 
-        # Run without UI (legacy mode)
-        results = run_multi_app_generation("sample.csv", enable_ui=False)
-
-        # Run with enrichment but without UI
-        results = run_multi_app_generation("sample.csv", enable_ui=False, enable_enrichment=True)
+        # Run with debug mode for verbose Claude output logging
+        results = run_multi_app_generation("sample.csv", debug_mode=True)
         ```
     """
     orchestrator = MultiAppOrchestrator(
-        csv_file_path=csv_file_path,
-        output_directory=output_directory,
-        max_concurrent=max_concurrent,
-        enable_ui=enable_ui,
-        show_claude_output=show_claude_output,
-        enable_enrichment=enable_enrichment,
+        *args,
+        **kwargs,
     )
 
     return orchestrator.run()
@@ -1031,13 +1074,11 @@ def run_multi_app_generation(
 #     if enable_enrichment:
 #         print("🧠 Product specification enrichment enabled!")
 
-#     # Run with Rich UI enabled by default
+#     # Run with minimal logging for concurrent execution
 #     try:
 #         results = run_multi_app_generation(
 #             csv_file_path=csv_path,
 #             output_directory=output_dir,
-#             enable_ui=True,
-#             show_claude_output=True,
 #             enable_enrichment=enable_enrichment,
 #         )
 #         print(f"\n🎉 Generation completed! Results: {results}")

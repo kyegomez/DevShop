@@ -32,6 +32,11 @@ black>=23.0.0
 flake8>=6.0.0
 mypy>=1.5.0
 
+# FastAPI and API dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
 # Optional: For enhanced CSV processing
 chardet>=5.2.0  # Character encoding detection
 

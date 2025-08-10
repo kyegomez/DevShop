@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Simple runner script to generate all apps from sample.csv using the MultiAppOrchestrator.
-
-This script demonstrates how to use the existing multi-app generator system
-to process all the app specifications in the sample.csv file concurrently.
-"""
-
 import sys
 from pathlib import Path
 from main import MultiAppOrchestrator
@@ -30,7 +22,8 @@ def main():
             output_directory=output_dir,
             enable_ui=False,
             enable_enrichment=True,
-            show_claude_output=True,
+            show_claude_output=False,
+            debug_mode=False,
         )
 
         # Generate all apps concurrently
