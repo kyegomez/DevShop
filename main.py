@@ -562,7 +562,9 @@ Start by verifying the artifacts folder location and required tokens, then creat
                         "Grep",
                         "WebSearch",
                     ],
-                    continue_conversation=False,  # Start fresh each time
+                    continue_conversation=True,  # Start fresh each time
+                    model="claude-sonnet-4-20250514",
+                    
                 )
 
                 async with ClaudeSDKClient(options=claude_options) as client:
@@ -888,7 +890,7 @@ class MultiAppOrchestrator:
         self, successful_apps: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Deploy all successfully generated apps to Vercel.
+        Deploy all successfully generated apps to Vercel using Vercel CLI and API.
 
         Args:
             successful_apps: List of successful app generation results
@@ -896,13 +898,36 @@ class MultiAppOrchestrator:
         Returns:
             Dict containing deployment results with URLs
         """
-
         # Check if Vercel token is available
         vercel_token = os.getenv("VERCEL_TOKEN")
         if not vercel_token:
+            print("❌ VERCEL_TOKEN not found in environment variables")
             return {
                 "success": False,
                 "error": "VERCEL_TOKEN not found",
+                "skipped": True,
+            }
+
+        # Check if Vercel CLI is installed
+        try:
+            vercel_version = subprocess.run(
+                ["vercel", "--version"], 
+                capture_output=True, 
+                text=True, 
+                timeout=10
+            )
+            if vercel_version.returncode != 0:
+                print("❌ Vercel CLI not found. Installing...")
+                self._install_vercel_cli()
+        except FileNotFoundError:
+            print("❌ Vercel CLI not found. Installing...")
+            self._install_vercel_cli()
+
+        # Verify Vercel authentication
+        if not self._verify_vercel_auth(vercel_token):
+            return {
+                "success": False,
+                "error": "Vercel authentication failed - check your VERCEL_TOKEN",
                 "skipped": True,
             }
 
@@ -914,101 +939,140 @@ class MultiAppOrchestrator:
             app_path = app_result.get("output_directory", "")
 
             if not app_path or not os.path.exists(app_path):
+                print(f"❌ App path not found for {app_name}: {app_path}")
+                failed_deployments.append({
+                    "app_name": app_name,
+                    "error": "App directory not found"
+                })
                 continue
 
             try:
+                print(f"🚀 Starting Vercel deployment for: {app_name}")
+                
                 # Create a unique project name for Vercel
                 project_name = f"devshop-{app_name.lower().replace(' ', '-').replace('_', '-')}-{int(time.time())}"
-
+                
+                # Store original directory
+                original_dir = os.getcwd()
+                
                 # Change to app directory
                 os.chdir(app_path)
+                print(f"📁 Changed to directory: {os.getcwd()}")
 
-                # Initialize Vercel project
+                # Check if vercel.json exists, if not create a basic one
+                if not os.path.exists("vercel.json"):
+                    print(f"📝 Creating vercel.json for {app_name}")
+                    self._create_vercel_config(app_name)
+
+                # Check if package.json exists (required for Next.js)
+                if not os.path.exists("package.json"):
+                    print(f"❌ package.json not found for {app_name}, skipping deployment")
+                    failed_deployments.append({
+                        "app_name": app_name,
+                        "error": "package.json not found - not a valid Next.js project"
+                    })
+                    os.chdir(original_dir)
+                    continue
+
+                # Initialize Vercel project (this creates the .vercel directory)
+                print(f"🔧 Initializing Vercel project: {project_name}")
                 init_cmd = [
                     "vercel",
                     "--yes",
-                    "--token",
-                    vercel_token,
-                    "--name",
-                    project_name,
+                    "--token", vercel_token,
+                    "--name", project_name,
+                    "--confirm"
                 ]
 
                 init_result = subprocess.run(
-                    init_cmd, capture_output=True, text=True, timeout=60
+                    init_cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=120,
+                    env={**os.environ, "VERCEL_TOKEN": vercel_token}
                 )
 
                 if init_result.returncode != 0:
-                    failed_deployments.append(
-                        {
-                            "app_name": app_name,
-                            "error": f"Vercel init failed: {init_result.stderr}",
-                        }
-                    )
+                    print(f"❌ Vercel init failed for {app_name}: {init_result.stderr}")
+                    failed_deployments.append({
+                        "app_name": app_name,
+                        "error": f"Vercel init failed: {init_result.stderr}"
+                    })
+                    os.chdir(original_dir)
                     continue
 
-                # Deploy to Vercel
-                deploy_cmd = ["vercel", "--prod", "--yes", "--token", vercel_token]
+                print(f"✅ Vercel project initialized for {app_name}")
+
+                # Deploy to Vercel production
+                print(f"🚀 Deploying {app_name} to Vercel production...")
+                deploy_cmd = [
+                    "vercel", 
+                    "--prod", 
+                    "--yes", 
+                    "--token", vercel_token,
+                    "--confirm"
+                ]
 
                 deploy_result = subprocess.run(
-                    deploy_cmd, capture_output=True, text=True, timeout=120
+                    deploy_cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=300,  # 5 minutes for deployment
+                    env={**os.environ, "VERCEL_TOKEN": vercel_token}
                 )
 
                 if deploy_result.returncode != 0:
-                    failed_deployments.append(
-                        {
-                            "app_name": app_name,
-                            "error": f"Vercel deployment failed: {deploy_result.stderr}",
-                        }
-                    )
+                    print(f"❌ Vercel deployment failed for {app_name}: {deploy_result.stderr}")
+                    failed_deployments.append({
+                        "app_name": app_name,
+                        "error": f"Vercel deployment failed: {deploy_result.stderr}"
+                    })
+                    os.chdir(original_dir)
                     continue
 
                 # Extract deployment URL from output
-                deployment_url = None
-                for line in deploy_result.stdout.split("\n"):
-                    if "https://" in line and "vercel.app" in line:
-                        deployment_url = line.strip()
-                        break
-
-                if not deployment_url:
-                    # Try to get URL from stderr (sometimes Vercel outputs there)
-                    for line in deploy_result.stderr.split("\n"):
-                        if "https://" in line and "vercel.app" in line:
-                            deployment_url = line.strip()
-                            break
-
+                deployment_url = self._extract_deployment_url(deploy_result.stdout, deploy_result.stderr)
+                
                 if deployment_url:
-                    deployment_results.append(
-                        {
-                            "app_name": app_name,
-                            "deployment_url": deployment_url,
-                            "project_name": project_name,
-                            "status": "success",
-                        }
-                    )
+                    print(f"✅ Successfully deployed {app_name} to: {deployment_url}")
+                    deployment_results.append({
+                        "app_name": app_name,
+                        "deployment_url": deployment_url,
+                        "project_name": project_name,
+                        "status": "success",
+                        "vercel_project_id": self._get_vercel_project_id(app_path)
+                    })
                 else:
-                    deployment_results.append(
-                        {
-                            "app_name": app_name,
-                            "deployment_url": "URL not found",
-                            "project_name": project_name,
-                            "status": "success_no_url",
-                        }
-                    )
+                    print(f"⚠️ Deployment successful but URL not found for {app_name}")
+                    deployment_results.append({
+                        "app_name": app_name,
+                        "deployment_url": "URL not found",
+                        "project_name": project_name,
+                        "status": "success_no_url",
+                        "vercel_project_id": self._get_vercel_project_id(app_path)
+                    })
 
-                # Wait a bit before next deployment to avoid rate limiting
-                time.sleep(2)
+                # Wait between deployments to avoid rate limiting
+                time.sleep(3)
 
             except subprocess.TimeoutExpired:
-                failed_deployments.append(
-                    {"app_name": app_name, "error": "Deployment timeout"}
-                )
+                print(f"⏰ Deployment timeout for {app_name}")
+                failed_deployments.append({
+                    "app_name": app_name,
+                    "error": "Deployment timeout"
+                })
             except Exception as e:
-                failed_deployments.append(
-                    {"app_name": app_name, "error": f"Unexpected error: {str(e)}"}
-                )
+                print(f"❌ Unexpected error deploying {app_name}: {str(e)}")
+                failed_deployments.append({
+                    "app_name": app_name,
+                    "error": f"Unexpected error: {str(e)}"
+                })
             finally:
                 # Return to original directory
-                os.chdir(self.output_directory)
+                try:
+                    os.chdir(original_dir)
+                except:
+                    pass
 
         # Summary of deployment results
         deployment_summary = {
@@ -1019,7 +1083,110 @@ class MultiAppOrchestrator:
             "failed_deployments": failed_deployments,
         }
 
+        print(f"🎉 Vercel deployment summary: {len(deployment_results)}/{len(successful_apps)} successful")
         return deployment_summary
+
+    def _install_vercel_cli(self):
+        """Install Vercel CLI if not present."""
+        try:
+            print("📦 Installing Vercel CLI...")
+            install_cmd = ["npm", "install", "-g", "vercel"]
+            result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                print("✅ Vercel CLI installed successfully")
+                # Verify installation
+                verify_cmd = ["vercel", "--version"]
+                verify_result = subprocess.run(verify_cmd, capture_output=True, text=True, timeout=10)
+                if verify_result.returncode == 0:
+                    print(f"✅ Vercel CLI verified: {verify_result.stdout.strip()}")
+                else:
+                    raise Exception("Vercel CLI installation verification failed")
+            else:
+                print(f"❌ Failed to install Vercel CLI: {result.stderr}")
+                raise Exception("Vercel CLI installation failed")
+        except Exception as e:
+            print(f"❌ Error installing Vercel CLI: {e}")
+            raise Exception(f"Vercel CLI installation failed: {e}")
+
+    def _verify_vercel_auth(self, vercel_token: str) -> bool:
+        """Verify that the Vercel token is valid and authenticated."""
+        try:
+            print("🔐 Verifying Vercel authentication...")
+            # Test the token by trying to list projects
+            test_cmd = ["vercel", "ls", "--token", vercel_token, "--max", 1]
+            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                print("✅ Vercel authentication verified successfully")
+                return True
+            else:
+                print(f"❌ Vercel authentication failed: {result.stderr}")
+                return False
+        except Exception as e:
+            print(f"❌ Error verifying Vercel authentication: {e}")
+            return False
+
+    def _create_vercel_config(self, app_name: str):
+        """Create a basic vercel.json configuration file."""
+        vercel_config = {
+            "version": 2,
+            "builds": [
+                {
+                    "src": "package.json",
+                    "use": "@vercel/next"
+                }
+            ],
+            "routes": [
+                {
+                    "src": "/(.*)",
+                    "dest": "/$1"
+                }
+            ]
+        }
+        
+        with open("vercel.json", "w") as f:
+            import json
+            json.dump(vercel_config, f, indent=2)
+        
+        print(f"✅ Created vercel.json for {app_name}")
+
+    def _extract_deployment_url(self, stdout: str, stderr: str) -> Optional[str]:
+        """Extract deployment URL from Vercel CLI output."""
+        # Look for URLs in both stdout and stderr
+        for output in [stdout, stderr]:
+            lines = output.split("\n")
+            for line in lines:
+                line = line.strip()
+                # Look for Vercel deployment URLs
+                if "https://" in line and ("vercel.app" in line or "vercel.com" in line):
+                    # Clean up the URL
+                    url = line.split("https://")[1].split(" ")[0]
+                    if url.endswith("/"):
+                        url = url[:-1]
+                    return f"https://{url}"
+                
+                # Also look for "Preview:" or "Production:" lines
+                if ("Preview:" in line or "Production:" in line) and "https://" in line:
+                    url = line.split("https://")[1].strip()
+                    if url.endswith("/"):
+                        url = url[:-1]
+                    return f"https://{url}"
+        
+        return None
+
+    def _get_vercel_project_id(self, app_path: str) -> Optional[str]:
+        """Get Vercel project ID from .vercel/project.json if it exists."""
+        try:
+            project_json_path = os.path.join(app_path, ".vercel", "project.json")
+            if os.path.exists(project_json_path):
+                with open(project_json_path, "r") as f:
+                    import json
+                    project_data = json.load(f)
+                    return project_data.get("projectId")
+        except Exception:
+            pass
+        return None
 
 
 def run_multi_app_generation(
