@@ -1,0 +1,18 @@
+{
+  "successful_deployments": {
+    "Budget Tracker": "https://budgettracker-5kl31x9yq-ellisosborn03s-projects.vercel.app",
+    "Study Buddy": "https://studybuddy-4anqyynld-ellisosborn03s-projects.vercel.app",
+    "Recipe Finder": "https://recipefinder-5ln251m5g-ellisosborn03s-projects.vercel.app"
+  },
+  "deployed_but_build_failed": {
+    "Task Manager Pro": "https://taskmanager-nr35j40xi-ellisosborn03s-projects.vercel.app",
+    "Habit Tracker": "https://habittracker-4p69sr86f-ellisosborn03s-projects.vercel.app",
+    "Plant Care": "https://plantcare-4k9a5vwlo-ellisosborn03s-projects.vercel.app",
+    "Language Exchange": "https://languageexchange-6wmhv9wu1-ellisosborn03s-projects.vercel.app",
+    "Workout Planner": "https://workoutplanner-94ouz8ivf-ellisosborn03s-projects.vercel.app",
+    "Local Events": "https://localevents-n1otfey6x-ellisosborn03s-projects.vercel.app",
+    "Inventory Manager": "https://inventorymanager-oorpvidw0-ellisosborn03s-projects.vercel.app"
+  },
+  "main_generator_app": "https://devshop-53qogrhb9-ellisosborn03s-projects.vercel.app",
+  "notes": "All apps were deployed to Vercel but some had build issues. The URLs are accessible and projects are created."
+}
