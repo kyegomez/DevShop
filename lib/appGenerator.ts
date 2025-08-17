@@ -117,6 +117,7 @@ NEXT.JS 14 APP REQUIREMENTS:
    - Dark/light mode toggle if appropriate
 
 **REQUIRED FILE STRUCTURE:**
+- package.json (MUST include Next.js dependencies - CRITICAL for deployment!)
 - app/page.tsx (compelling landing page)
 - app/dashboard/page.tsx (main application interface)
 - app/layout.tsx (root layout with navigation)
@@ -124,9 +125,39 @@ NEXT.JS 14 APP REQUIREMENTS:
 - components/dashboard/ (dashboard-specific components at ROOT level)
 - components/ui/ (reusable UI components at ROOT level)
 - components/landing/ (landing page components at ROOT level)
-- package.json (optimized dependencies)
 - next.config.js, tailwind.config.js, tsconfig.json
 - README.md (comprehensive setup & value proposition)
+
+**CRITICAL: ALWAYS INCLUDE package.json**
+Your package.json MUST include:
+{
+  "name": "generated-app-name",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "react": "^18",
+    "react-dom": "^18",
+    "next": "14.0.0",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.0.1",
+    "postcss": "^8",
+    "lucide-react": "^0.294.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.0"
+  }
+}
 
 **CRITICAL: Import Requirements:**
 - Use @/ path aliases for ALL imports (much cleaner than relative paths)
@@ -224,12 +255,64 @@ Before outputting your JSON, verify that:
 **IF YOU CANNOT GENERATE ALL REQUIRED COMPONENTS, DO NOT GENERATE THE FILE THAT IMPORTS THEM.**
 **PREFER SIMPLER COMPONENTS OVER MISSING IMPORTS.**
 
-**Landing Page Requirements:**
-- Hero section that immediately communicates value
-- Social proof or testimonials (mock data)
-- Feature highlights based on research
-- Clear call-to-action to start using the app
-- FAQ section addressing common concerns
+**Landing Page Requirements (COMPREHENSIVE MARKETING COPY):**
+
+**HERO SECTION:**
+- Compelling headline (benefit-focused, not feature-focused)
+- Supporting subheadline explaining the solution
+- Primary CTA button (action-oriented: "Start Free Trial", "Get Started Free")
+- Secondary CTA button ("See Demo", "Learn More")
+- Hero highlights with icons (3-4 key benefits with emoji icons)
+
+**PROBLEM & SOLUTION SECTION:**
+- "The Challenge" - identify the pain point your target user faces
+- "Our Solution" - how your app solves it better than alternatives
+
+**KEY FEATURES SECTION (Grid Cards):**
+- 6-8 feature cards with benefit-focused titles
+- Each feature should explain WHAT it does and WHY it matters
+- Use action-oriented language
+
+**COLLABORATION/PRODUCT SPOTLIGHT:**
+- Split layout with compelling copy
+- Focus on the main differentiator
+- Include specific benefits and outcomes
+
+**INTEGRATIONS SECTION:**
+- Show how it fits into existing workflows
+- List popular tools it connects with
+
+**TESTIMONIALS SECTION:**
+- 3 realistic testimonials with names, titles, companies
+- Include specific metrics or outcomes when possible
+- Mix of different user types/use cases
+
+**PRICING SECTION:**
+- 3-tier structure: Free/Starter, Pro, Enterprise
+- Clear value progression
+- Highlight most popular plan
+- Include key features for each tier
+
+**FINAL CTA SECTION:**
+- Emotional headline about the transformation
+- Reinforce the key benefit
+- Strong action-oriented CTA
+
+**COPY STYLE GUIDELINES:**
+- Headlines should be benefit-focused, not feature-focused
+- Use active voice and action verbs
+- Include specific outcomes when possible ("30% faster", "Save 2 hours daily")
+- Address the user directly ("Your team", "You can")
+- Create urgency and exclusivity where appropriate
+- Use social proof language ("Join thousands", "Trusted by teams")
+
+**EXAMPLE STRUCTURE TO FOLLOW:**
+Hero: "Master Every [TASK]. Power Every [TARGET USER]."
+Problem: "Too many [CURRENT PAIN POINTS]. Projects slow down because..."
+Solution: "[APP NAME] centralizes [WORKFLOW] - turning [PROBLEM] into [SOLUTION]"
+Features: Focus on outcomes, not just capabilities
+Testimonials: Include metrics and transformation stories
+Pricing: Clear value ladder with compelling CTAs
 
 **Main Application Features:**
 - Implement ALL identified must-have features
@@ -286,28 +369,42 @@ PYTHON APPLICATION REQUIREMENTS:
 
 5. **Focus on User Success**: Every feature should have a clear purpose in helping ${spec.target_user} achieve ${spec.app_goal}.
 
-  **CRITICAL OUTPUT FORMAT (JSON WITH BASE64 CONTENT):**
+  **CRITICAL OUTPUT FORMAT (VALID JSON ONLY):**
 
-  You MUST respond with ONLY a valid JSON object. All file content must be base64-encoded to prevent JSON escaping issues.
+  You MUST respond with ONLY a valid JSON object with the following structure:
 
-  Required format:
   {
     "files": {
-      "path/to/file.ext": {
-        "encoding": "base64",
-        "content": "BASE64_ENCODED_CONTENT_HERE"
-      }
+      "path/to/file.ext": "FILE_CONTENT_AS_STRING"
     }
   }
 
   CRITICAL RULES:
-  - Every file's content MUST be base64-encoded before placing in JSON
-  - Use only double quotes for JSON strings
-  - No raw code content - everything must be base64 encoded
-  - No additional text, markdown, or commentary outside the JSON object
+  - Return ONLY the JSON object, no additional text
+  - Use proper JSON escaping for quotes and special characters
+  - File paths should use forward slashes
+  - Ensure all imported components are included as separate files
+  - Use double quotes for all JSON strings
   - Validate your JSON syntax before responding
 
-**Your mission**: Create an application that doesn't just solve "${spec.main_problem}" but creates a delightful, comprehensive solution that users would actually want to use and recommend to others.`
+  EXAMPLE:
+  {
+    "files": {
+      "app/page.tsx": "import React from 'react';\n\nexport default function Home() {\n  return <div>Hello World</div>;\n}",
+      "components/ui/Button.tsx": "interface ButtonProps {\n  children: React.ReactNode;\n}\n\nexport function Button({ children }: ButtonProps) {\n  return <button>{children}</button>;\n}"
+    }
+  }
+
+**Your mission**: Create a production-ready application that goes far beyond basic functionality. Build a comprehensive solution that:
+
+1. **Solves the core problem**: "${spec.main_problem}" for ${spec.target_user}
+2. **Delivers professional marketing copy**: Use compelling headlines, benefit-focused messaging, and clear value propositions
+3. **Includes complete user flows**: From landing page to core functionality, create a seamless experience
+4. **Demonstrates real value**: Include specific metrics, outcomes, and social proof
+5. **Looks and feels professional**: Modern design, consistent branding, and polished UI
+6. **Is deployment-ready**: Complete with all necessary files, proper structure, and optimized performance
+
+Create something users would genuinely want to use, share, and potentially pay for. Make it feel like a real product, not just a demo.`
   }
 
   private async generateWithClaude(spec: AppSpecification): Promise<{ files: Record<string, string> }> {
@@ -319,16 +416,10 @@ PYTHON APPLICATION REQUIREMENTS:
     try {
       const systemPrompt = this.createSystemPrompt(spec)
       
-      // Define structured schema for robust object generation
-      const FileValueSchema = z.union([
-        z.object({ encoding: z.literal('base64'), content: z.string() }),
-        z.object({ b64: z.string() }),
-        z.string()
-      ])
-
+      // Simple and flexible schema
       const ResponseSchema = z.object({
-        files: z.record(FileValueSchema)
-      })
+        files: z.record(z.string()).optional().default({}) // Optional files with default empty object
+      }).passthrough() // Allow additional properties
 
       this.logger.info(`Starting Claude generation with structured output`, { 
         promptLength: systemPrompt.length,
@@ -344,52 +435,42 @@ PYTHON APPLICATION REQUIREMENTS:
 
       this.logger.info(`Claude API response received`, { 
         appName: spec.name, 
-        fileCount: Object.keys(object.files).length,
-        fileKeys: Object.keys(object.files).slice(0, 5) // Log first 5 file keys for debugging
+        filesType: typeof object.files,
+        filesKeys: object.files && typeof object.files === 'object' ? Object.keys(object.files).slice(0, 5) : []
       })
 
-      // Decode base64 contents if present
-      const decodedFiles: Record<string, string> = {}
-      for (const [filePath, value] of Object.entries<any>(object.files)) {
+      // Handle case where files might be returned as a JSON string
+      let files: Record<string, string> = {}
+      if (typeof object.files === 'string') {
         try {
-          if (value && typeof value === 'object' && (value.encoding === 'base64' || value.b64)) {
-            const b64 = typeof value.b64 === 'string' ? value.b64 : String(value.content || '')
-            
-            if (!b64) {
-              this.logger.warn(`Empty base64 content for file`, { filePath })
-              decodedFiles[filePath] = ''
-              continue
-            }
+          files = JSON.parse(object.files)
+          this.logger.info(`Parsed JSON string files`, { fileCount: Object.keys(files).length })
+        } catch (parseError) {
+          this.logger.error('Failed to parse files JSON string', { 
+            error: parseError instanceof Error ? parseError.message : 'Unknown error',
+            filesPreview: typeof object.files === 'string' ? object.files.substring(0, 200) : 'Not a string'
+          })
+          files = {}
+        }
+      } else if (object.files && typeof object.files === 'object') {
+        files = object.files
+        this.logger.info(`Using object files`, { fileCount: Object.keys(files).length })
+      }
 
-            try {
-              const decodedContent = Buffer.from(b64, 'base64').toString('utf8')
-              decodedFiles[filePath] = decodedContent
-              this.logger.info(`Successfully decoded base64 file`, { 
-                filePath, 
-                originalSize: b64.length, 
-                decodedSize: decodedContent.length 
-              })
-            } catch (b64Error) {
-              this.logger.error('Base64 decode failed', { 
-                filePath, 
-                b64Length: b64.length,
-                b64Preview: b64.substring(0, 50),
-                error: b64Error instanceof Error ? b64Error.message : 'Unknown base64 error'
-              })
-              decodedFiles[filePath] = ''
-            }
-          } else if (typeof value === 'string') {
-            // Accept raw string (model may return direct content)
-            this.logger.info(`Using raw string content for file`, { filePath, contentLength: value.length })
-            decodedFiles[filePath] = value
-          } else {
-            this.logger.warn('Unknown file value format; coercing to string', { 
-              filePath, 
-              type: typeof value,
-              value: JSON.stringify(value).substring(0, 100)
-            })
-            decodedFiles[filePath] = String(value ?? '')
-          }
+      // Process file contents
+      const decodedFiles: Record<string, string> = {}
+      
+      for (const [filePath, value] of Object.entries<any>(files)) {
+        try {
+          // Convert all values to strings (schema should have handled JSON parsing)
+          const stringValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+          decodedFiles[filePath] = stringValue
+          
+          this.logger.info(`Processed file content`, { 
+            filePath, 
+            contentLength: stringValue.length,
+            contentType: typeof value 
+          })
         } catch (fileError) {
           this.logger.error('Error processing file', { 
             filePath, 
